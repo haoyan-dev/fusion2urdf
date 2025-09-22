@@ -1,8 +1,16 @@
 import math
+from typing import Optional, Union
 
 
 class Transform:
-    def __init__(self, translation=None, rotation=None):
+    translation: list[float]  # [x, y, z]
+    rotation: list[float]  # [roll, pitch, yaw] in radians
+
+    def __init__(
+        self,
+        translation: Optional[list[float]] = None,
+        rotation: Optional[list[float]] = None,
+    ):
         # translation: [x, y, z]
         # rotation: [roll, pitch, yaw] in radians
         self.translation = translation if translation else [0.0, 0.0, 0.0]
@@ -40,18 +48,27 @@ class Transform:
         ]
         return mat
 
+    @property
+    def rotation_matrix(self):
+        """Return 3x3 rotation matrix."""
+        return [row[:3] for row in self.as_matrix()[:3]]
+
     @staticmethod
-    def from_matrix(matrix):
-        """Create Transform from 4x4 matrix."""
-        tx = matrix[0][3]
-        ty = matrix[1][3]
-        tz = matrix[2][3]
+    def from_matrix(matrix) -> "Transform":
+        """Create Transform from a 4x4 matrix."""
+        matrix = validate_matrix_4x4(list(matrix))
+
+        tx = matrix[0][3] / 100.0  # cm to m
+        ty = matrix[1][3] / 100.0  # cm to m
+        tz = matrix[2][3] / 100.0  # cm to m
+
         # Extract rotation matrix
         R = [
             [matrix[0][0], matrix[0][1], matrix[0][2]],
             [matrix[1][0], matrix[1][1], matrix[1][2]],
             [matrix[2][0], matrix[2][1], matrix[2][2]],
         ]
+        
         # Extract Euler angles (roll, pitch, yaw)
         sy = math.sqrt(R[0][0] ** 2 + R[1][0] ** 2)
         singular = sy < 1e-6
@@ -71,6 +88,27 @@ class Transform:
         mat2 = other.as_matrix()
         result = mat_mult(mat1, mat2)
         return Transform.from_matrix(result)
+
+    def inverse(self):
+        """Return the inverse transform."""
+        inv_mat = mat_inverse_4x4(self.as_matrix())
+        return Transform.from_matrix(inv_mat)
+
+def validate_matrix_4x4(matrix: Union[list[list[float]], list[float]]) -> list[list[float]]:
+    """Validate and convert input to a 4x4 matrix."""
+    if isinstance(matrix, list) and all(isinstance(row, list) for row in matrix):
+        if len(matrix) != 4 or any(len(row) != 4 for row in matrix):
+            raise ValueError("Matrix must be 4x4.")
+        return matrix
+    elif isinstance(matrix, list) and len(matrix) == 16:
+        return [
+            matrix[0:4],
+            matrix[4:8],
+            matrix[8:12],
+            matrix[12:16],
+        ]
+    else:
+        raise ValueError("Input must be a 4x4 matrix or a flat list of 16 elements.")
 
 
 def mat_mult(A, B):

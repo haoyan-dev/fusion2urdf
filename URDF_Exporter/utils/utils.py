@@ -13,6 +13,23 @@ import shutil  # Replaced distutils with shutil
 import fileinput
 import sys
 
+def convert_occ_name(occ_name: str) -> str:
+    """
+    Convert the occurrence name to a valid URDF link/joint name by replacing
+    spaces and special characters with underscores.
+
+    Parameters
+    ----------
+    occ_name : str
+        The original occurrence name.
+
+    Returns
+    -------
+    str
+        The converted name suitable for URDF.
+    """
+    return re.sub('[ :()]', '_', occ_name)
+
 def copy_occs(root):    
     """    
     duplicate all the components
@@ -33,7 +50,7 @@ def copy_occs(root):
             occs.component.name = 'old_component'
             new_occs.component.name = 'base_link'
         else:
-            new_occs.component.name = re.sub('[ :()]', '_', occs.name)
+            new_occs.component.name = convert_occ_name(occs.name)
         new_occs = allOccs.item((allOccs.count-1))
         for i in range(bodies.count):
             body = bodies.item(i)
@@ -87,6 +104,14 @@ def export_stl(design, save_dir, components):
                 except:
                     print('Component ' + occ.component.name + ' has something wrong.')
 
+def remove_old_components(root):
+    """    
+    remove all the old components
+    """    
+    allOccs = root.occurrences
+    oldOccs = [occs for occs in allOccs if occs.component.name == 'old_component']
+    for occs in oldOccs:
+        occs.deleteMe()
 
 def file_dialog(ui):     
     """
