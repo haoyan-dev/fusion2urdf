@@ -73,13 +73,15 @@ def write_urdf(
     robot_name: str,
     save_dir: str,
 ):
+
+    urdf_dir = os.path.join(save_dir, package_name, "urdf")
     try:
-        os.mkdir(save_dir + "/urdf")
+        os.mkdir(urdf_dir)
     except Exception:
         pass
 
-    file_name = save_dir + "/urdf/" + robot_name + ".xacro"  # the name of urdf file
-    repo = package_name + "/meshes/"  # the repository of binary stl files
+    file_name = os.path.join(urdf_dir, robot_name + ".xacro")
+
     with open(file_name, mode="w") as f:
         f.write('<?xml version="1.0" ?>\n')
         f.write(
@@ -88,24 +90,24 @@ def write_urdf(
             )
         )
         f.write("\n")
-        f.write(
-            '<xacro:include filename="$(find {})/urdf/materials.xacro" />'.format(
-                package_name
-            )
-        )
-        f.write("\n")
-        f.write(
-            '<xacro:include filename="$(find {})/urdf/{}.trans" />'.format(
-                package_name, robot_name
-            )
-        )
-        f.write("\n")
-        f.write(
-            '<xacro:include filename="$(find {})/urdf/{}.gazebo" />'.format(
-                package_name, robot_name
-            )
-        )
-        f.write("\n")
+        # f.write(
+        #     '<xacro:include filename="$(find {})/urdf/materials.xacro" />'.format(
+        #         package_name
+        #     )
+        # )
+        # f.write("\n")
+        # f.write(
+        #     '<xacro:include filename="$(find {})/urdf/{}.trans" />'.format(
+        #         package_name, robot_name
+        #     )
+        # )
+        # f.write("\n")
+        # f.write(
+        #     '<xacro:include filename="$(find {})/urdf/{}.gazebo" />'.format(
+        #         package_name, robot_name
+        #     )
+        # )
+        # f.write("\n")
 
     write_link_urdf(file_name, links)
     write_joint_urdf(file_name, joints)

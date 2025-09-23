@@ -57,29 +57,95 @@ def run(context):
         components = design.allComponents
 
         # set the names
-        robot_name = root.name.split()[0]
-        package_name = robot_name + "_description"
-        save_dir = utils.file_dialog(ui)
-        if save_dir == False:
-            ui.messageBox("Fusion2URDF was canceled", title)
-            return 0
+        # robot_name = root.name.split()[0]
+        # package_name = robot_name + "_description"
+        # save_dir = utils.file_dialog(ui)
+        # if save_dir == False:
+        #     ui.messageBox("Fusion2URDF was canceled", title)
+        #     return 0
 
-        save_dir = save_dir + "/" + package_name
+        # save_dir = save_dir + "/" + package_name
+        # try:
+        #     os.mkdir(save_dir)
+        # except FileExistsError:
+        #     ui.messageBox("Folder already exists. Continuing...", title)
+        #     pass
+        # except Exception as e:
+        #     ui.messageBox("Failed to create directory: {}".format(save_dir), title)
+        #     return 0
+
+        # package_dir = os.path.abspath(os.path.dirname(__file__)) + "/package/"
+
+        # get user's download folder by default
+        home = os.path.expanduser("~")
+        download_dir = os.path.join(home, "Downloads")
+        save_dir = os.path.join(download_dir, "assets")
+        package_dir = os.path.join(save_dir, "robot_v1_description")
+
+        # create package directory
         try:
-            os.mkdir(save_dir)
-        except FileExistsError:
-            ui.messageBox("Folder already exists. Continuing...", title)
-            pass
+            os.makedirs(package_dir, exist_ok=True)
         except Exception as e:
-            ui.messageBox("Failed to create directory: {}".format(save_dir), title)
-            return 0
+            print(f"Failed to create directory: {package_dir}. Error: {e}")
 
-        package_dir = os.path.abspath(os.path.dirname(__file__)) + "/package/"
+        # create urdf directory
+        try:
+            os.makedirs(os.path.join(package_dir, "urdf"), exist_ok=True)
+        except Exception as e:
+            print(
+                f"Failed to create directory: {os.path.join(package_dir, 'urdf')}. Error: {e}"
+            )
 
+        # create meshes directory
+        try:
+            os.makedirs(os.path.join(package_dir, "meshes"), exist_ok=True)
+        except Exception as e:
+            print(
+                f"Failed to create directory: {os.path.join(package_dir, 'meshes')}. Error: {e}"
+            )
+
+        # Check all occurrences
+        all_occurrences = root.allOccurrences
+        # for occ in all_occurrences:
+        #     ui.messageBox("Component: " + occ.component.name, title)
+        #     ui.messageBox(
+        #         "Transform: "
+        #         + str(occ.transform2.asArray())
+        #         + "\n"
+        #         + "Is Grounded: "
+        #         + str(occ.isGrounded),
+        #         title,
+        #     )
+
+        for occ in all_occurrences:
+            if occ != root:
+                print("Component: " + occ.component.name)
+                pass
+            else:
+                print("Root Component: " + occ.component.name)
+                pass
+
+        # Check joints
+        all_joints = root.joints
+        links, success, msg = make_links(
+            all_occurrences, repo="package://robot_v1_description/"
+        )
+        joints, success, msg = make_joints(
+            all_joints, "package://robot_v1_description/", all_occurrences
+        )
+
+        # save_dir = utils.file_dialog(ui)
+        # if not save_dir:
+        #     ui.messageBox("Fusion2URDF was canceled", title)
+        #     return 0
+        write_urdf(joints, links, "robot_v1_description", "robot_v1", save_dir)
+
+        utils.export_stl(design, package_dir, all_occurrences)
+
+        return 0
         # --------------------
 
         # Generate inertial_dict
-        links, success, msg = make_links(root)
 
         ui.messageBox(msg, title)
         if not success:
@@ -111,9 +177,7 @@ def run(context):
         utils.update_package_xml(save_dir, package_name)
 
         # Generate STl files
-        utils.copy_occs(root)
         utils.export_stl(design, save_dir, components)
-        utils.remove_old_components(root)
 
         ui.messageBox(msg, title)
 

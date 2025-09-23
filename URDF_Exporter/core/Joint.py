@@ -6,9 +6,11 @@ Created on Sun May 12 20:17:17 2019
 """
 
 from enum import Enum
-from typing import Tuple
+from typing import Tuple, Any, Optional
 from ..utils.math_utils import Transform
+from ..core.Link import Link
 import adsk
+import adsk.fusion
 import re
 from xml.etree.ElementTree import Element, SubElement
 from ..utils import utils, convert_occ_name
@@ -43,8 +45,8 @@ class Joint:
         self.origin: Transform = origin
         self.parent: str = parent
         self.child: str = child
-        self.joint_xml: str = None
-        self.tran_xml: str = None
+        self.joint_xml: Optional[str] = None
+        self.tran_xml: Optional[str] = None
         self.axis: list[float] = axis  # for 'revolute' and 'continuous'
         self.upper_limit: float = upper_limit  # for 'revolute' and 'prismatic'
         self.lower_limit: float = lower_limit  # for 'revolute' and 'prismatic'
@@ -61,8 +63,8 @@ class Joint:
 
         origin = SubElement(joint, "origin")
         origin.attrib = {
-            "xyz": " ".join([str(_) for _ in self.xyz]),
-            "rpy": " ".join([str(_) for _ in self.rpy]),
+            "xyz": " ".join([str(round(el, 6)) for el in self.xyz]),
+            "rpy": " ".join([str(round(el, 6)) for el in self.rpy]),
         }
         parent = SubElement(joint, "parent")
         parent.attrib = {"link": self.parent}
@@ -74,12 +76,12 @@ class Joint:
             or self.type == "prismatic"
         ):
             axis = SubElement(joint, "axis")
-            axis.attrib = {"xyz": " ".join([str(_) for _ in self.axis])}
+            axis.attrib = {"xyz": " ".join([str(round(el, 6)) for el in self.axis])}
         if self.type == "revolute" or self.type == "prismatic":
             limit = SubElement(joint, "limit")
             limit.attrib = {
-                "upper": str(self.upper_limit),
-                "lower": str(self.lower_limit),
+                "upper": str(round(self.upper_limit, 6)),
+                "lower": str(round(self.lower_limit, 6)),
                 "effort": "100",
                 "velocity": "100",
             }
@@ -134,7 +136,11 @@ class JointTypes(Enum):
     INFERRED = 7
 
 
-def make_joints(root: adsk.fusion.Component) -> Tuple[list[Joint], bool, str]:
+def make_joints(
+    all_joints: adsk.fusion.Joints,
+    repo: str,
+    all_occurrences: adsk.fusion.OccurrenceList,
+) -> Tuple[list[Joint], bool, str]:
     """
     Collect all the joints in the design and make Joint instances for each joint
     Parameters
@@ -169,22 +175,59 @@ def make_joints(root: adsk.fusion.Component) -> Tuple[list[Joint], bool, str]:
     The name of the transmission is the name of the joint + "_tran".
     """
 
-    joints = []
+    joints: dict[str, Joint] = {}
+    links: dict[str, Link] = {}
 
-    for fusion_joint in root.joints:
+    def make_link(occ: adsk.fusion.Occurrence, repo: str) -> Link:
+        prop = occ.getPhysicalProperties(
+            adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy  # type: ignore
+        )
+
+        name = convert_occ_name(occ.name)
+
+        mass = prop.mass  # kg
+        center_of_mass = [_ / 100.0 for _ in prop.centerOfMass.asArray()]  ## cm to m
+
+        # https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-ce341ee6-4490-11e5-b25b-f8b156d7cd97
+        (_, xx, yy, zz, xy, yz, xz) = prop.getXYZMomentsOfInertia()
+        moment_inertia_world = [
+            _ / 10000.0 for _ in [xx, yy, zz, xy, yz, xz]
+        ]  ## kg / cm^2 -> kg/m^2
+        inertia_tensor = utils.origin2center_of_mass(
+            moment_inertia_world, center_of_mass, mass
+        )
+
+        link = Link(name, center_of_mass, repo, mass, inertia_tensor)
+
+        return link
+
+    for occ in all_occurrences:
+        link = make_link(occ, repo)
+        links[occ.name] = link
+
+    for fusion_joint in all_joints:
         child_occ = fusion_joint.occurrenceOne
         parent_occ = fusion_joint.occurrenceTwo
-        # child_geom = (
-        #     fusion_joint.geometryOrOriginOne
-        #     if type(fusion_joint.geometryOrOriginOne) == adsk.fusion.JointGeometry
-        #     else fusion_joint.geometryOrOriginTwo.geometry
-        # )
-        # parent_geom = (
-        #     fusion_joint.geometryOrOriginTwo
-        #     if type(fusion_joint.geometryOrOriginTwo) == adsk.fusion.JointGeometry
-        #     else fusion_joint.geometryOrOriginOne.geometry
-        # )
-        motion = fusion_joint.jointMotion
+
+        child_joint_origin = fusion_joint.geometryOrOriginOne
+        parent_joint_origin = fusion_joint.geometryOrOriginTwo
+
+        if not isinstance(
+            child_joint_origin, adsk.fusion.JointOrigin
+        ) or not isinstance(parent_joint_origin, adsk.fusion.JointOrigin):
+            msg = (
+                fusion_joint.name
+                + " is not set its joint origin. Please set it and try again."
+            )
+            return [], False, msg
+
+        child_link = links[child_occ.name]
+        # set offset from the origin of the child link to the joint origin
+        oMj = Transform.from_Matrix3D(child_joint_origin.transform)
+        oMl = Transform.from_Matrix3D(child_occ.transform2)
+        child_link.offset = oMl.inverse() * oMj
+
+        motion: Any = fusion_joint.jointMotion
         fusion_joint_type = motion.jointType
 
         axis = [0, 0, 0]
@@ -214,7 +257,7 @@ def make_joints(root: adsk.fusion.Component) -> Tuple[list[Joint], bool, str]:
                         fusion_joint.name
                         + " is not set its rotation axis. Please set it and try again."
                     )
-                    return None, False, msg
+                    return [], False, msg
             elif (
                 not motion.rotationLimits.isMaximumValueEnabled
                 and not motion.rotationLimits.isMinimumValueEnabled
@@ -231,13 +274,13 @@ def make_joints(root: adsk.fusion.Component) -> Tuple[list[Joint], bool, str]:
                         fusion_joint.name
                         + " is not set its rotation axis. Please set it and try again."
                     )
-                    return None, False, msg
+                    return [], False, msg
             else:
                 msg = (
                     fusion_joint.name
                     + " is not set its angle limit. Please set it and try again."
                 )
-                return None, False, msg
+                return [], False, msg
 
         elif fusion_joint_type == JointTypes.SLIDER.value:
             joint_type = "prismatic"
@@ -247,13 +290,13 @@ def make_joints(root: adsk.fusion.Component) -> Tuple[list[Joint], bool, str]:
                 fusion_joint.name
                 + " is not supported joint type. Only Revolute, Rigid and Slider are supported for now."
             )
-            return None, msg
+            return [], False, msg
 
         # calculate the origin of the joint
-        parent_tf = Transform.from_matrix(parent_occ.transform2.asArray())
-        child_tf = Transform.from_matrix(child_occ.transform2.asArray())
+        oMp = Transform.from_Matrix3D(parent_joint_origin.transform)
+        oMc = Transform.from_Matrix3D(child_joint_origin.transform)
 
-        origin = parent_tf.inverse() * child_tf
+        origin = oMp.inverse() * oMc
 
         parent_occ_name = convert_occ_name(parent_occ.name)
         child_occ_name = convert_occ_name(child_occ.name)
@@ -268,139 +311,8 @@ def make_joints(root: adsk.fusion.Component) -> Tuple[list[Joint], bool, str]:
             upper_limit=joint_upper_limit,
             lower_limit=joint_lower_limit,
         )
-        joints.append(joint)
+        joints[joint.name] = joint
 
         msg = "All the joints are successfully collected."
 
-    return joints, True, msg
-
-
-def make_joints_dict(root, msg):
-    """
-    joints_dict holds parent, axis and xyz informatino of the joints
-
-
-    Parameters
-    ----------
-    root: adsk.fusion.Design.cast(product)
-        Root component
-    msg: str
-        Tell the status
-
-    Returns
-    ----------
-    joints_dict:
-        {name: {type, axis, upper_limit, lower_limit, parent, child, transform}, ...}
-    msg: str
-        Tell the status
-    """
-
-    joint_type_list = [
-        "fixed",
-        "revolute",
-        "prismatic",
-        "Cylinderical",
-        "PinSlot",
-        "Planner",
-        "Ball",
-    ]  # these are the names in urdf
-
-    joints_dict = {}
-
-    for joint in root.joints:
-        joint_dict = {}
-        joint_type = joint_type_list[joint.jointMotion.jointType]
-        joint_dict["type"] = joint_type
-
-        # swhich by the type of the joint
-        joint_dict["axis"] = [0, 0, 0]
-        joint_dict["upper_limit"] = 0.0
-        joint_dict["lower_limit"] = 0.0
-
-        # support  "Revolute", "Rigid" and "Slider"
-        if joint_type == "revolute":
-            joint_motion_axis = joint.jointMotion.rotationAxis
-            if joint_motion_axis == 0:  # X axis
-                joint_dict["axis"] = [1, 0, 0]
-            elif joint_motion_axis == 1:  # Y axis
-                joint_dict["axis"] = [0, 1, 0]
-            elif joint_motion_axis == 2:  # Z axis
-                joint_dict["axis"] = [0, 0, 1]
-            else:
-                raise Exception("Unknown rotation axis")
-
-            max_enabled = joint.jointMotion.rotationLimits.isMaximumValueEnabled
-            min_enabled = joint.jointMotion.rotationLimits.isMinimumValueEnabled
-
-            if max_enabled and min_enabled:
-                joint_dict["upper_limit"] = round(
-                    joint.jointMotion.rotationLimits.maximumValue, 6
-                )
-                joint_dict["lower_limit"] = round(
-                    joint.jointMotion.rotationLimits.minimumValue, 6
-                )
-            elif max_enabled and not min_enabled:
-                msg = (
-                    joint.name
-                    + "is not set its lower limit. Please set it and try again."
-                )
-                break
-            elif not max_enabled and min_enabled:
-                msg = (
-                    joint.name
-                    + "is not set its upper limit. Please set it and try again."
-                )
-                break
-            else:  # if there is no angle limit
-                joint_dict["type"] = "continuous"
-
-        elif joint_type == "prismatic":
-            joint_dict["axis"] = [
-                round(i, 6) for i in joint.jointMotion.slideDirectionVector.asArray()
-            ]  # Also normalized
-            max_enabled = joint.jointMotion.slideLimits.isMaximumValueEnabled
-            min_enabled = joint.jointMotion.slideLimits.isMinimumValueEnabled
-            if max_enabled and min_enabled:
-                joint_dict["upper_limit"] = round(
-                    joint.jointMotion.slideLimits.maximumValue / 100, 6
-                )
-                joint_dict["lower_limit"] = round(
-                    joint.jointMotion.slideLimits.minimumValue / 100, 6
-                )
-            elif max_enabled and not min_enabled:
-                msg = (
-                    joint.name
-                    + "is not set its lower limit. Please set it and try again."
-                )
-                break
-            elif not max_enabled and min_enabled:
-                msg = (
-                    joint.name
-                    + "is not set its upper limit. Please set it and try again."
-                )
-                break
-        elif joint_type == "fixed":
-            pass
-
-        if joint.occurrenceTwo.component.name == "base_link":
-            joint_dict["parent"] = "base_link"
-        else:
-            joint_dict["parent"] = re.sub("[ :()]", "_", joint.occurrenceTwo.name)
-        joint_dict["child"] = re.sub("[ :()]", "_", joint.occurrenceOne.name)
-
-        # check joint one and two, only allow JointOrigin for two and JointGeometry for one
-        if (
-            type(joint.geometryOrOriginOne) != adsk.fusion.JointGeometry
-            or type(joint.geometryOrOriginTwo) != adsk.fusion.JointOrigin
-        ):
-            msg = (
-                joint.name + " doesn't have joint origin. Please set it and run again."
-            )
-            break
-
-        oMj = Transform.from_matrix(joint.geometryOrOriginTwo.transform.asArray())
-
-        joint_dict["oMj"] = oMj
-        joints_dict[joint.name] = joint_dict
-
-    return joints_dict, msg
+    return list(joints.values()), True, msg

@@ -8,6 +8,7 @@ Created on Sun May 12 20:11:28 2019
 from typing import Tuple
 from ..utils.math_utils import Transform
 import adsk
+import adsk.fusion
 import re
 from xml.etree.ElementTree import Element, SubElement
 from ..utils import utils, convert_occ_name
@@ -19,14 +20,12 @@ class Link:
     Unit: m, kg, radian
     """
 
-    def __init__(self, name, transform, center_of_mass, repo, mass, inertia_tensor):
+    def __init__(self, name, center_of_mass, repo, mass, inertia_tensor):
         """
         Parameters
         ----------
         name: str
             name of the link
-        transform: Transform
-            transformation of the link
         center_of_mass: [x, y, z]
             coordinate for the center of mass
         link_xml: str
@@ -39,12 +38,14 @@ class Link:
             tensor of the inertia
         """
         self.name = name
-        self.transform = transform
         self.center_of_mass = center_of_mass
         self.link_xml = None
         self.repo = repo
         self.mass = mass
         self.inertia_tensor = inertia_tensor
+
+        self.transform: Transform = Transform()
+        self.offset: Transform = Transform()
 
     def make_link_xml(self) -> str:
         """
@@ -73,18 +74,19 @@ class Link:
             "ixz": str(self.inertia_tensor[5]),
         }
 
+        scale = 0.001
         # visual
         visual = SubElement(link, "visual")
         origin_v = SubElement(visual, "origin")
         origin_v.attrib = {
-            "xyz": " ".join([str(_) for _ in self.transform.translation]),
-            "rpy": " ".join([str(_) for _ in self.transform.rotation]),
+            "xyz": " ".join([str(round(el, 6)) for el in self.transform.translation]),
+            "rpy": " ".join([str(round(el, 6)) for el in self.transform.rotation]),
         }
         geometry_v = SubElement(visual, "geometry")
         mesh_v = SubElement(geometry_v, "mesh")
         mesh_v.attrib = {
-            "filename": self.repo + self.name + ".stl",
-            "scale": "0.001 0.001 0.001",
+            "filename": f"{self.repo}meshes/{self.name}.stl",
+            "scale": " ".join([str(scale)] * 3),
         }
         material = SubElement(visual, "material")
         material.attrib = {"name": "silver"}
@@ -93,15 +95,15 @@ class Link:
         collision = SubElement(link, "collision")
         origin_c = SubElement(collision, "origin")
         origin_c.attrib = {
-            "xyz": " ".join([str(_) for _ in self.transform.translation]),
-            "rpy": " ".join([str(_) for _ in self.transform.rotation]),
+            "xyz": " ".join([str(round(el, 6)) for el in self.transform.translation]),
+            "rpy": " ".join([str(round(el, 6)) for el in self.transform.rotation]),
         }
         # origin_c.attrib = {"xyz": " ".join([str(_) for _ in self.xyz]), "rpy": "0 0 0"}
         geometry_c = SubElement(collision, "geometry")
         mesh_c = SubElement(geometry_c, "mesh")
         mesh_c.attrib = {
-            "filename": self.repo + self.name + ".stl",
-            "scale": "0.001 0.001 0.001",
+            "filename": f"{self.repo}meshes/{self.name}.stl",
+            "scale": " ".join([str(scale)] * 3),
         }
 
         # print("\n".join(utils.prettify(link).split("\n")[1:]))
@@ -110,7 +112,9 @@ class Link:
         return self.link_xml
 
 
-def make_links(root: adsk.fusion.Component) -> Tuple[list, bool, str]:
+def make_links(
+    all_occurrences: adsk.fusion.OccurrenceList, repo: str
+) -> Tuple[list, bool, str]:
     """
     Parameters
     ----------
@@ -128,20 +132,16 @@ def make_links(root: adsk.fusion.Component) -> Tuple[list, bool, str]:
     """
     # Get component properties.
     # Design: Lengths (cm), Angles (radians), Mass (kg)
-    allOccs = root.occurrences
+    allOccs = all_occurrences
     links = []
 
-    for occs in allOccs:
-        # Skip the root component.
-        if occs == root:
-            continue
+    for occ in allOccs:
 
-        prop = occs.getPhysicalProperties(
-            adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy
+        prop = occ.getPhysicalProperties(
+            adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy  # type: ignore
         )
 
-        # replace space, : to _
-        name = convert_occ_name(occs.name)
+        name = convert_occ_name(occ.name)
 
         mass = prop.mass  # kg
         center_of_mass = [_ / 100.0 for _ in prop.centerOfMass.asArray()]  ## cm to m
@@ -155,64 +155,59 @@ def make_links(root: adsk.fusion.Component) -> Tuple[list, bool, str]:
             moment_inertia_world, center_of_mass, mass
         )
 
-        transform = Transform.from_matrix(occs.transform2.asArray())
-
-        repo = f"package://{re.sub('[ :()]', '_', root.name)}/meshes/"
-
-        link = Link(name, transform, center_of_mass, repo, mass, inertia_tensor)
-        link.make_link_xml()
+        link = Link(name, center_of_mass, repo, mass, inertia_tensor)
         links.append(link)
 
     msg = "Successfully create links"
     return links, True, msg
 
 
-def make_inertial_dict(root, msg):
-    """
-    Parameters
-    ----------
-    root: adsk.fusion.Design.cast(product)
-        Root component
-    msg: str
-        Tell the status
+# def make_inertial_dict(root, msg):
+#     """
+#     Parameters
+#     ----------
+#     root: adsk.fusion.Design.cast(product)
+#         Root component
+#     msg: str
+#         Tell the status
 
-    Returns
-    ----------
-    inertial_dict: {name:{mass, inertia, center_of_mass}}
+#     Returns
+#     ----------
+#     inertial_dict: {name:{mass, inertia, center_of_mass}}
 
-    msg: str
-        Tell the status
-    """
-    # Get component properties.
-    allOccs = root.occurrences
-    inertial_dict = {}
+#     msg: str
+#         Tell the status
+#     """
+#     # Get component properties.
+#     allOccs = root.occurrences
+#     inertial_dict = {}
 
-    for occs in allOccs:
-        # Skip the root component.
-        occs_dict = {}
-        prop = occs.getPhysicalProperties(
-            adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy
-        )
+#     for occs in allOccs:
+#         # Skip the root component.
+#         occs_dict = {}
+#         prop = occs.getPhysicalProperties(
+#             adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy
+#         )
 
-        occs_dict["name"] = re.sub("[ :()]", "_", occs.name)
+#         occs_dict["name"] = re.sub("[ :()]", "_", occs.name)
 
-        mass = prop.mass  # kg
-        occs_dict["mass"] = mass
-        center_of_mass = [_ / 100.0 for _ in prop.centerOfMass.asArray()]  ## cm to m
-        occs_dict["center_of_mass"] = center_of_mass
+#         mass = prop.mass  # kg
+#         occs_dict["mass"] = mass
+#         center_of_mass = [_ / 100.0 for _ in prop.centerOfMass.asArray()]  ## cm to m
+#         occs_dict["center_of_mass"] = center_of_mass
 
-        # https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-ce341ee6-4490-11e5-b25b-f8b156d7cd97
-        (_, xx, yy, zz, xy, yz, xz) = prop.getXYZMomentsOfInertia()
-        moment_inertia_world = [
-            _ / 10000.0 for _ in [xx, yy, zz, xy, yz, xz]
-        ]  ## kg / cm^2 -> kg/m^2
-        occs_dict["inertia"] = utils.origin2center_of_mass(
-            moment_inertia_world, center_of_mass, mass
-        )
+#         # https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-ce341ee6-4490-11e5-b25b-f8b156d7cd97
+#         (_, xx, yy, zz, xy, yz, xz) = prop.getXYZMomentsOfInertia()
+#         moment_inertia_world = [
+#             _ / 10000.0 for _ in [xx, yy, zz, xy, yz, xz]
+#         ]  ## kg / cm^2 -> kg/m^2
+#         occs_dict["inertia"] = utils.origin2center_of_mass(
+#             moment_inertia_world, center_of_mass, mass
+#         )
 
-        if occs.component.name == "base_link":
-            inertial_dict["base_link"] = occs_dict
-        else:
-            inertial_dict[re.sub("[ :()]", "_", occs.name)] = occs_dict
+#         if occs.component.name == "base_link":
+#             inertial_dict["base_link"] = occs_dict
+#         else:
+#             inertial_dict[re.sub("[ :()]", "_", occs.name)] = occs_dict
 
-    return inertial_dict, msg
+#     return inertial_dict, msg
