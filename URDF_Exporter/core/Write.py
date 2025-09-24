@@ -5,11 +5,13 @@ Created on Sun May 12 20:46:26 2019
 @author: syuntoku
 """
 
-from typing import Any
-import adsk
 import os
+from typing import Any
 from xml.etree.ElementTree import Element, SubElement
-from ..core import Link, Joint
+
+import adsk
+
+from ..core import Joint, Link
 from ..utils import utils
 
 

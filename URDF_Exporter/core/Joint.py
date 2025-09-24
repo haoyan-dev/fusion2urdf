@@ -6,14 +6,15 @@ Created on Sun May 12 20:17:17 2019
 """
 
 from enum import Enum
-from typing import Tuple, Any, Optional
-from ..utils.math_utils import Transform
-from ..core.Link import Link
+from typing import Any, Optional, Tuple
+from xml.etree.ElementTree import Element, SubElement
+
 import adsk
 import adsk.fusion
-import re
-from xml.etree.ElementTree import Element, SubElement
-from ..utils import utils, convert_occ_name
+
+from ..core.Link import Link
+from ..utils import convert_occ_name, utils
+from ..utils.math_utils import Transform
 
 
 class Joint:

@@ -5,17 +5,18 @@ Created on Sun May 12 19:15:34 2019
 @author: syuntoku
 """
 
+import fileinput
+import os.path
+import re
+import shutil  # Replaced distutils with shutil
+import sys
 from typing import Any
+from xml.dom import minidom
+from xml.etree import ElementTree
+
 import adsk
 import adsk.core
 import adsk.fusion
-import os.path
-import re
-from xml.etree import ElementTree
-from xml.dom import minidom
-import shutil  # Replaced distutils with shutil
-import fileinput
-import sys
 
 
 def convert_occ_name(occ_name: str) -> str:
@@ -58,7 +59,7 @@ def export_stl(
     # create a single exportManager instance
     exportMgr = design.exportManager
     meshes_dir = urdf_infos["meshes_dir"]
-    
+
     # export the occurrence one by one in the component to a specified file
     occurrences = design.rootComponent.allOccurrences
 

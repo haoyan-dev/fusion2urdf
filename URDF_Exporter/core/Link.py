@@ -5,14 +5,16 @@ Created on Sun May 12 20:11:28 2019
 @author: syuntoku
 """
 
-from typing import Optional, Tuple
-from ..utils.math_utils import Transform
-import adsk
-import adsk.fusion
-import adsk.core
 import re
+from typing import Optional, Tuple
 from xml.etree.ElementTree import Element, SubElement
-from ..utils import utils, convert_occ_name
+
+import adsk
+import adsk.core
+import adsk.fusion
+
+from ..utils import convert_occ_name, utils
+from ..utils.math_utils import Transform
 
 
 class Link:
