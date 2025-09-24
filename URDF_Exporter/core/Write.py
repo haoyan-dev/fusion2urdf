@@ -16,14 +16,14 @@ from ..utils.utils import UrdfInfo
 
 def write_link_urdf(file_name: str, links: dict[str, Link]) -> None:
     """Write link definitions to a URDF file.
-    
+
     Appends URDF XML representations of all provided links to the specified file.
     Each link's XML is generated using its make_link_xml() method.
-    
+
     Args:
         file_name: Full path to the URDF file to append to
         links: Dictionary mapping link names to Link objects
-        
+
     Note:
         File must already exist and be opened in append mode.
     """
@@ -36,15 +36,15 @@ def write_link_urdf(file_name: str, links: dict[str, Link]) -> None:
 
 def write_joint_urdf(file_name: str, joints: dict[str, Joint]) -> None:
     """Write joint and transmission definitions to a URDF file.
-    
+
     Appends URDF XML representations of all provided joints and their
     corresponding transmissions to the specified file. Each joint's XML
     is generated using its make_joint_xml() and make_transmission_xml() methods.
-    
+
     Args:
         file_name: Full path to the URDF file to append to
         joints: Dictionary mapping joint names to Joint objects
-        
+
     Note:
         File must already exist and be opened in append mode.
     """
@@ -60,27 +60,28 @@ def write_joint_urdf(file_name: str, joints: dict[str, Joint]) -> None:
 
 def write_gazebo_endtag(file_name: str) -> None:
     """Write the closing robot tag to complete the URDF file.
-    
+
     Appends the closing </robot> tag to properly terminate the URDF XML structure.
-    
+
     Args:
         file_name: Full path to the URDF file to append to
     """
     with open(file_name, mode="a") as f:
+        f.write("</xacro:macro>\n")
         f.write("</robot>\n")
 
 
 def write_urdf(urdf_infos: UrdfInfo) -> None:
     """Generate the main URDF XACRO file with includes and robot definition.
-    
+
     Creates the primary XACRO file that includes material definitions, transmissions,
     and Gazebo configurations, then writes all links and joints to complete the
     robot description.
-    
+
     Args:
         urdf_infos: Dictionary containing all URDF generation parameters including
                    package_name, robot_name, urdf_dir, joints, and links
-                   
+
     Note:
         Creates a .xacro file that includes:
         - materials.xacro for material definitions
@@ -103,6 +104,8 @@ def write_urdf(urdf_infos: UrdfInfo) -> None:
             )
         )
         f.write("\n")
+        f.write(f'<xacro:macro name="{robot_name}" params="">')
+        f.write("\n")
         f.write(
             f'<xacro:include filename="$(find {package_name})/urdf/materials.xacro" />'
         )
@@ -124,10 +127,10 @@ def write_urdf(urdf_infos: UrdfInfo) -> None:
 
 def write_materials_xacro(urdf_infos: UrdfInfo) -> None:
     """Generate materials.xacro file with material definitions.
-    
+
     Creates a XACRO file containing material definitions used by the robot links.
     Currently defines a single 'silver' material with appropriate color values.
-    
+
     Args:
         urdf_infos: Dictionary containing URDF generation parameters including
                    robot_name and urdf_dir
@@ -153,14 +156,14 @@ def write_materials_xacro(urdf_infos: UrdfInfo) -> None:
 
 def write_transmissions_xacro(urdf_infos: UrdfInfo) -> None:
     """Generate transmission XACRO file for ros_control integration.
-    
+
     Creates a XACRO file containing transmission definitions for all non-fixed joints.
     Transmissions define the interface between joints and their actuators for ros_control.
-    
+
     Args:
         urdf_infos: Dictionary containing URDF generation parameters including
                    robot_name, urdf_dir, and joints
-                   
+
     Note:
         Only processes joints with type != "fixed" to avoid unnecessary transmissions
         for static connections.
@@ -190,17 +193,17 @@ def write_transmissions_xacro(urdf_infos: UrdfInfo) -> None:
 
 def write_gazebo_xacro(urdf_infos: UrdfInfo) -> None:
     """Generate Gazebo-specific XACRO file with simulation properties.
-    
+
     Creates a XACRO file containing Gazebo-specific configurations including:
     - ros_control plugin for joint control
     - Material properties for all links
     - Friction coefficients (mu1, mu2)
     - Collision and gravity settings
-    
+
     Args:
         urdf_infos: Dictionary containing URDF generation parameters including
                    robot_name, urdf_dir, and joints
-                   
+
     Note:
         Sets default friction coefficients of 0.2 for all links and enables
         self-collision detection.
@@ -252,14 +255,14 @@ def write_gazebo_xacro(urdf_infos: UrdfInfo) -> None:
 
 def write_display_launch(urdf_infos: UrdfInfo) -> None:
     """Generate ROS launch file for robot visualization in RViz.
-    
+
     Creates a launch file that loads the robot URDF, starts joint state publisher GUI,
     robot state publisher, and RViz for visualization.
-    
+
     Args:
         urdf_infos: Dictionary containing URDF generation parameters including
                    package_name, robot_name, and launch_dir
-                   
+
     Note:
         - Uses xacro to process the main robot XACRO file
         - Includes joint_state_publisher_gui for manual joint control
@@ -327,14 +330,14 @@ def write_display_launch(urdf_infos: UrdfInfo) -> None:
 
 def write_gazebo_launch(urdf_infos: UrdfInfo) -> None:
     """Generate ROS launch file for Gazebo simulation.
-    
+
     Creates a launch file that loads the robot into Gazebo simulator with
     appropriate world settings and spawning configuration.
-    
+
     Args:
         urdf_infos: Dictionary containing URDF generation parameters including
                    package_name, robot_name, and launch_dir
-                   
+
     Note:
         - Launches empty Gazebo world with physics enabled
         - Spawns robot from URDF parameter with proper model name
@@ -388,15 +391,15 @@ def write_gazebo_launch(urdf_infos: UrdfInfo) -> None:
 
 def write_control_launch(urdf_infos: UrdfInfo) -> None:
     """Generate ROS launch file for robot control.
-    
+
     Creates a launch file that starts ros_control controllers for all non-fixed joints
     and publishes robot state. Includes controller spawner and robot state publisher
     nodes with appropriate remapping.
-    
+
     Args:
         urdf_infos: Dictionary containing URDF generation parameters including
                    package_name, robot_name, joints, and launch_dir
-                   
+
     Note:
         - Creates position controllers for all non-fixed joints
         - Includes joint_state_controller for state publishing
@@ -459,15 +462,15 @@ def write_control_launch(urdf_infos: UrdfInfo) -> None:
 
 def write_yaml(urdf_infos: UrdfInfo) -> None:
     """Generate YAML configuration file for ros_control controllers.
-    
+
     Creates a YAML file defining controller configurations including:
     - Joint state controller for publishing joint states
     - Position controllers for all non-fixed joints with PID parameters
-    
+
     Args:
         urdf_infos: Dictionary containing URDF generation parameters including
                    robot_name, joints, and launch_dir
-                   
+
     Note:
         Uses default PID values (P=100.0, I=0.01, D=10.0) for all position
         controllers. Joint state controller publishes at 50 Hz.
