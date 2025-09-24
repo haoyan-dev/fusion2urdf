@@ -3,6 +3,7 @@
 Created on Sun May 12 20:46:26 2019
 
 @author: syuntoku
+@modified by: haoyan.li
 """
 
 import os
@@ -14,15 +15,17 @@ from ..utils.utils import UrdfInfo
 
 
 def write_link_urdf(file_name: str, links: dict[str, Link]) -> None:
-    """
-    Write links information into urdf "repo/file_name"
-
-    Parameters
-    ----------
-    file_name: str
-        urdf full path
-    links: dict[str, Link]
-        Dictionary of Link objects keyed by link name
+    """Write link definitions to a URDF file.
+    
+    Appends URDF XML representations of all provided links to the specified file.
+    Each link's XML is generated using its make_link_xml() method.
+    
+    Args:
+        file_name: Full path to the URDF file to append to
+        links: Dictionary mapping link names to Link objects
+        
+    Note:
+        File must already exist and be opened in append mode.
     """
     with open(file_name, mode="a") as f:
         for link_name, link in links.items():
@@ -32,15 +35,18 @@ def write_link_urdf(file_name: str, links: dict[str, Link]) -> None:
 
 
 def write_joint_urdf(file_name: str, joints: dict[str, Joint]) -> None:
-    """
-    Write joints information into urdf "repo/file_name"
-
-    Parameters
-    ----------
-    file_name: str
-        urdf full path
-    joints: dict[str, Joint]
-        Dictionary of Joint objects keyed by joint name
+    """Write joint and transmission definitions to a URDF file.
+    
+    Appends URDF XML representations of all provided joints and their
+    corresponding transmissions to the specified file. Each joint's XML
+    is generated using its make_joint_xml() and make_transmission_xml() methods.
+    
+    Args:
+        file_name: Full path to the URDF file to append to
+        joints: Dictionary mapping joint names to Joint objects
+        
+    Note:
+        File must already exist and be opened in append mode.
     """
     with open(file_name, mode="a") as f:
         for joint_name, joint in joints.items():
@@ -53,20 +59,34 @@ def write_joint_urdf(file_name: str, joints: dict[str, Joint]) -> None:
 
 
 def write_gazebo_endtag(file_name: str) -> None:
-    """
-    Write about gazebo_plugin and the </robot> tag at the end of the urdf
-
-
-    Parameters
-    ----------
-    file_name: str
-        urdf full path
+    """Write the closing robot tag to complete the URDF file.
+    
+    Appends the closing </robot> tag to properly terminate the URDF XML structure.
+    
+    Args:
+        file_name: Full path to the URDF file to append to
     """
     with open(file_name, mode="a") as f:
         f.write("</robot>\n")
 
 
 def write_urdf(urdf_infos: UrdfInfo) -> None:
+    """Generate the main URDF XACRO file with includes and robot definition.
+    
+    Creates the primary XACRO file that includes material definitions, transmissions,
+    and Gazebo configurations, then writes all links and joints to complete the
+    robot description.
+    
+    Args:
+        urdf_infos: Dictionary containing all URDF generation parameters including
+                   package_name, robot_name, urdf_dir, joints, and links
+                   
+    Note:
+        Creates a .xacro file that includes:
+        - materials.xacro for material definitions
+        - {robot_name}.trans for transmissions
+        - {robot_name}.gazebo for Gazebo-specific settings
+    """
     package_name = urdf_infos["package_name"]
     robot_name = urdf_infos["robot_name"]
     urdf_dir = urdf_infos["urdf_dir"]
@@ -103,6 +123,15 @@ def write_urdf(urdf_infos: UrdfInfo) -> None:
 
 
 def write_materials_xacro(urdf_infos: UrdfInfo) -> None:
+    """Generate materials.xacro file with material definitions.
+    
+    Creates a XACRO file containing material definitions used by the robot links.
+    Currently defines a single 'silver' material with appropriate color values.
+    
+    Args:
+        urdf_infos: Dictionary containing URDF generation parameters including
+                   robot_name and urdf_dir
+    """
     robot_name = urdf_infos["robot_name"]
     urdf_dir = urdf_infos["urdf_dir"]
     file_name = os.path.join(urdf_dir, "materials.xacro")  # the name of urdf file
@@ -123,13 +152,18 @@ def write_materials_xacro(urdf_infos: UrdfInfo) -> None:
 
 
 def write_transmissions_xacro(urdf_infos: UrdfInfo) -> None:
-    """
-    Write joints and transmission information into urdf transmission file
-
-    Parameters
-    ----------
-    urdf_infos: UrdfInfo
-        Dictionary containing URDF generation information including joints
+    """Generate transmission XACRO file for ros_control integration.
+    
+    Creates a XACRO file containing transmission definitions for all non-fixed joints.
+    Transmissions define the interface between joints and their actuators for ros_control.
+    
+    Args:
+        urdf_infos: Dictionary containing URDF generation parameters including
+                   robot_name, urdf_dir, and joints
+                   
+    Note:
+        Only processes joints with type != "fixed" to avoid unnecessary transmissions
+        for static connections.
     """
     robot_name = urdf_infos["robot_name"]
     urdf_dir = urdf_infos["urdf_dir"]
@@ -155,6 +189,22 @@ def write_transmissions_xacro(urdf_infos: UrdfInfo) -> None:
 
 
 def write_gazebo_xacro(urdf_infos: UrdfInfo) -> None:
+    """Generate Gazebo-specific XACRO file with simulation properties.
+    
+    Creates a XACRO file containing Gazebo-specific configurations including:
+    - ros_control plugin for joint control
+    - Material properties for all links
+    - Friction coefficients (mu1, mu2)
+    - Collision and gravity settings
+    
+    Args:
+        urdf_infos: Dictionary containing URDF generation parameters including
+                   robot_name, urdf_dir, and joints
+                   
+    Note:
+        Sets default friction coefficients of 0.2 for all links and enables
+        self-collision detection.
+    """
     robot_name = urdf_infos["robot_name"]
     urdf_dir = urdf_infos["urdf_dir"]
     joints: dict[str, Joint] = urdf_infos["joints"]
@@ -201,13 +251,19 @@ def write_gazebo_xacro(urdf_infos: UrdfInfo) -> None:
 
 
 def write_display_launch(urdf_infos: UrdfInfo) -> None:
-    """
-    Write display launch file "launch_dir/display.launch"
-
-    Parameters
-    ----------
-    urdf_infos: UrdfInfo
-        Dictionary containing URDF generation information
+    """Generate ROS launch file for robot visualization in RViz.
+    
+    Creates a launch file that loads the robot URDF, starts joint state publisher GUI,
+    robot state publisher, and RViz for visualization.
+    
+    Args:
+        urdf_infos: Dictionary containing URDF generation parameters including
+                   package_name, robot_name, and launch_dir
+                   
+    Note:
+        - Uses xacro to process the main robot XACRO file
+        - Includes joint_state_publisher_gui for manual joint control
+        - Loads custom RViz configuration from urdf.rviz
     """
     package_name = urdf_infos["package_name"]
     robot_name = urdf_infos["robot_name"]
@@ -270,13 +326,19 @@ def write_display_launch(urdf_infos: UrdfInfo) -> None:
 
 
 def write_gazebo_launch(urdf_infos: UrdfInfo) -> None:
-    """
-    Write gazebo launch file "launch_dir/gazebo.launch"
-
-    Parameters
-    ----------
-    urdf_infos: UrdfInfo
-        Dictionary containing URDF generation information
+    """Generate ROS launch file for Gazebo simulation.
+    
+    Creates a launch file that loads the robot into Gazebo simulator with
+    appropriate world settings and spawning configuration.
+    
+    Args:
+        urdf_infos: Dictionary containing URDF generation parameters including
+                   package_name, robot_name, and launch_dir
+                   
+    Note:
+        - Launches empty Gazebo world with physics enabled
+        - Spawns robot from URDF parameter with proper model name
+        - Sets simulation parameters (paused start, GUI enabled, etc.)
     """
     package_name = urdf_infos["package_name"]
     robot_name = urdf_infos["robot_name"]
@@ -325,13 +387,20 @@ def write_gazebo_launch(urdf_infos: UrdfInfo) -> None:
 
 
 def write_control_launch(urdf_infos: UrdfInfo) -> None:
-    """
-    Write control launch file "launch_dir/controller.launch"
-
-    Parameters
-    ----------
-    urdf_infos: UrdfInfo
-        Dictionary containing URDF generation information including joints
+    """Generate ROS launch file for robot control.
+    
+    Creates a launch file that starts ros_control controllers for all non-fixed joints
+    and publishes robot state. Includes controller spawner and robot state publisher
+    nodes with appropriate remapping.
+    
+    Args:
+        urdf_infos: Dictionary containing URDF generation parameters including
+                   package_name, robot_name, joints, and launch_dir
+                   
+    Note:
+        - Creates position controllers for all non-fixed joints
+        - Includes joint_state_controller for state publishing
+        - Remaps joint_states topic to namespace the robot
     """
     package_name = urdf_infos["package_name"]
     robot_name = urdf_infos["robot_name"]
@@ -389,13 +458,19 @@ def write_control_launch(urdf_infos: UrdfInfo) -> None:
 
 
 def write_yaml(urdf_infos: UrdfInfo) -> None:
-    """
-    Write YAML controller configuration file "launch_dir/controller.yaml"
-
-    Parameters
-    ----------
-    urdf_infos: UrdfInfo
-        Dictionary containing URDF generation information including joints
+    """Generate YAML configuration file for ros_control controllers.
+    
+    Creates a YAML file defining controller configurations including:
+    - Joint state controller for publishing joint states
+    - Position controllers for all non-fixed joints with PID parameters
+    
+    Args:
+        urdf_infos: Dictionary containing URDF generation parameters including
+                   robot_name, joints, and launch_dir
+                   
+    Note:
+        Uses default PID values (P=100.0, I=0.01, D=10.0) for all position
+        controllers. Joint state controller publishes at 50 Hz.
     """
     robot_name = urdf_infos["robot_name"]
     joints: dict[str, Joint] = urdf_infos["joints"]

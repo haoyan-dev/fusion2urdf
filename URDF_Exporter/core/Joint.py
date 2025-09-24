@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sun May 12 20:17:17 2019
+"""Joint module for URDF generation from Fusion 360.
 
+This module provides classes and functions to extract joint information from
+Fusion 360 components and convert them to URDF joint representations.
+
+Created on Sun May 12 20:17:17 2019
 @author: syuntoku
+@modified by: haoyan.li
 """
 
 from enum import Enum
@@ -11,36 +15,57 @@ from xml.etree.ElementTree import Element, SubElement
 
 # pyright: reportMissingImports=false
 import adsk
+import adsk.core
 import adsk.fusion
 
-# Link imports removed as they were unused in this module
 from ..utils import convert_occ_name, utils
 from ..utils.math_utils import Transform
 
 
 class Joint:
+    """Represents a URDF joint with all necessary properties.
+
+    This class encapsulates joint information including type, origin transformation,
+    axis direction, parent/child links, and joint limits. It provides methods to
+    generate URDF XML representations for both joints and transmissions.
+
+    Attributes:
+        name: Name of the joint
+        type: Type of joint (revolute, continuous, prismatic, fixed)
+        origin: Transformation from parent link to child joint origin
+        axis: Axis of rotation/translation for the joint
+        parent: Name of the parent link
+        child: Name of the child link
+        upper_limit: Upper limit for joint motion (radians for revolute, meters for prismatic)
+        lower_limit: Lower limit for joint motion (radians for revolute, meters for prismatic)
+        xyz: Translation component of origin transformation
+        rpy: Rotation component of origin transformation (roll, pitch, yaw)
+        joint_xml: Generated URDF XML for the joint (set by make_joint_xml)
+        tran_xml: Generated URDF XML for the transmission (set by make_transmission_xml)
+    """
+
     def __init__(
-        self, name, origin, axis, parent, child, joint_type, upper_limit, lower_limit
-    ):
-        """
-        Attributes
-        ----------
-        name: str
-            name of the joint
-        type: str
-            type of the joint(ex: rev)
-        transform: Transform
-            transformation of the joint
-        axis: [x, y, z]
-            coordinate of axis of the joint
-        parent: str
-            parent link
-        child: str
-            child link
-        joint_xml: str
-            generated xml describing about the joint
-        tran_xml: str
-            generated xml describing about the transmission
+        self,
+        name: str,
+        origin: Transform,
+        axis: list[float],
+        parent: str,
+        child: str,
+        joint_type: str,
+        upper_limit: float,
+        lower_limit: float,
+    ) -> None:
+        """Initialize a Joint instance.
+
+        Args:
+            name: Name of the joint
+            origin: Transformation from parent link to child joint origin
+            axis: Direction vector [x, y, z] for joint axis
+            parent: Name of the parent link
+            child: Name of the child link
+            joint_type: Type of joint (revolute, continuous, prismatic, fixed)
+            upper_limit: Upper motion limit (radians/meters depending on joint type)
+            lower_limit: Lower motion limit (radians/meters depending on joint type)
         """
         self.name: str = name
         self.type: str = joint_type
@@ -57,8 +82,17 @@ class Joint:
         self.rpy: list[float] = origin.rotation
 
     def make_joint_xml(self) -> str:
-        """
-        Generate the joint_xml and hold it by self.joint_xml
+        """Generate URDF XML representation of the joint.
+
+        Creates a complete URDF joint element with origin, parent/child links,
+        axis (for non-fixed joints), and limits (for revolute/prismatic joints).
+        The generated XML is stored in self.joint_xml and returned.
+
+        Returns:
+            str: Complete URDF XML string for the joint
+
+        Note:
+            The XML includes effort and velocity limits set to default values of 100.
         """
         joint = Element("joint")
         joint.attrib = {"name": self.name, "type": self.type}
@@ -93,15 +127,19 @@ class Joint:
         return self.joint_xml
 
     def make_transmission_xml(self) -> str:
-        """
-        Generate the tran_xml and hold it by self.tran_xml
+        """Generate URDF XML representation of the joint transmission.
 
+        Creates a transmission element for use with ros_control, defining the
+        interface between the joint and its actuator. Uses SimpleTransmission
+        with EffortJointInterface and a mechanical reduction of 1:1.
 
-        Notes
-        -----------
-        mechanicalTransmission: 1
-        type: transmission interface/SimpleTransmission
-        hardwareInterface: PositionJointInterface
+        Returns:
+            str: Complete URDF XML string for the transmission
+
+        Note:
+            - Transmission type: transmission_interface/SimpleTransmission
+            - Hardware interface: hardware_interface/EffortJointInterface
+            - Mechanical reduction: 1 (no reduction)
         """
 
         tran = Element("transmission")
@@ -128,6 +166,16 @@ class Joint:
 
 
 class JointTypes(Enum):
+    """Enumeration of Fusion 360 joint types.
+
+    Maps Fusion 360 joint type constants to their corresponding integer values.
+    Used to identify and process different joint types during URDF conversion.
+
+    Note:
+        Only RIGID, REVOLUTE, and SLIDER joints are currently supported
+        for URDF export. Other joint types will raise an error.
+    """
+
     RIGID = 0
     REVOLUTE = 1
     SLIDER = 2

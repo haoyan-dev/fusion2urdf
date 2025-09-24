@@ -61,7 +61,6 @@ def run(context):
             return
 
         root = design.rootComponent  # root component
-        components = design.allComponents
 
         # --------------------
         # get user's download folder by default

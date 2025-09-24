@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sun May 12 20:11:28 2019
+"""Link module for URDF generation from Fusion 360.
 
+This module provides classes and functions to extract link information from
+Fusion 360 components and convert them to URDF link representations with
+mass properties, visual and collision geometries.
+
+Created on Sun May 12 20:11:28 2019
 @author: syuntoku
+@modified by: haoyan.li
 """
 
 from typing import Optional
@@ -18,50 +23,72 @@ from ..utils.math_utils import Transform
 
 
 class Link:
-    """
-    Class for a link.
-    Unit: m, kg, radian
+    """Represents a URDF link with mass properties and geometry information.
+
+    This class encapsulates all link properties including mass, center of mass,
+    inertia tensor, and geometry references. It handles coordinate transformations
+    between joint origins and link frames, and generates URDF XML representations.
+
+    Units: meters for length, kilograms for mass, radians for angles
+
+    Attributes:
+        name: Name of the link
+        center_of_mass: Center of mass coordinates [x, y, z] in meters
+        repo: Repository path for mesh file references
+        mass: Mass of the link in kilograms
+        inertia_tensor: Inertia tensor [ixx, iyy, izz, ixy, iyz, ixz] in kg⋅m²
+        lMjo: Transformation from link frame to joint origin
+        joMl: Transformation from joint origin to link frame
+        link_xml: Generated URDF XML for the link (set by make_link_xml)
     """
 
     def __init__(
         self,
-        name,
-        center_of_mass,
-        repo,
-        mass,
-        inertia_tensor,
+        name: str,
+        center_of_mass: list[float],
+        repo: str,
+        mass: float,
+        inertia_tensor: list[float],
         joint_origin_tf: Optional[adsk.core.Matrix3D] = None,
-    ):
+    ) -> None:
+        """Initialize a Link instance.
+
+        Args:
+            name: Name of the link
+            center_of_mass: Center of mass coordinates [x, y, z] in meters
+            repo: Repository path for mesh file references
+            mass: Mass of the link in kilograms
+            inertia_tensor: Inertia tensor [ixx, iyy, izz, ixy, iyz, ixz] in kg⋅m²
+            joint_origin_tf: Optional transformation matrix from link to joint origin
         """
-        Parameters
-        ----------
-        name: str
-            name of the link
-        center_of_mass: [x, y, z]
-            coordinate for the center of mass
-        link_xml: str
-            generated xml describing about the link
-        repo: str
-            the name of the repository to save the xml file
-        mass: float
-            mass of the link
-        inertia_tensor: [ixx, iyy, izz, ixy, iyz, ixz]
-            tensor of the inertia
-        """
-        self.name = name
-        self.center_of_mass = center_of_mass
-        self.link_xml = None
-        self.repo = repo
-        self.mass = mass
-        self.inertia_tensor = inertia_tensor
-        self.lMjo = (
+        self.name: str = name
+        self.center_of_mass: list[float] = center_of_mass
+        self.link_xml: Optional[str] = None
+        self.repo: str = repo
+        self.mass: float = mass
+        self.inertia_tensor: list[float] = inertia_tensor
+        self.lMjo: Transform = (
             Transform.from_Matrix3D(joint_origin_tf) if joint_origin_tf else Transform()
         )
-        self.joMl = self.lMjo.inverse()
+        self.joMl: Transform = self.lMjo.inverse()
 
     def make_link_xml(self) -> str:
-        """
-        Generate the link_xml and hold it by self.link_xml
+        """Generate URDF XML representation of the link.
+
+        Creates a complete URDF link element including:
+        - Inertial properties (mass, center of mass, inertia tensor)
+        - Visual geometry (STL mesh with silver material)
+        - Collision geometry (same STL mesh)
+
+        The visual and collision geometries are adjusted for any offset between
+        the joint origin and link origin using the joMl transformation.
+
+        Returns:
+            str: Complete URDF XML string for the link
+
+        Note:
+            STL meshes are scaled by 0.001 (assuming Fusion 360 export is in mm,
+            converting to meters for URDF).
         """
 
         link = Element("link")
@@ -127,6 +154,18 @@ class Link:
 
 
 def make_links(root: adsk.fusion.Component, urdf_infos: UrdfInfo) -> dict[str, Link]:
+    """Create Link objects for all occurrences in a Fusion 360 component.
+
+    Processes all occurrences in the root component and creates corresponding
+    Link objects with extracted mass properties and geometry information.
+
+    Args:
+        root: Root Fusion 360 component containing all occurrences
+        urdf_infos: Dictionary containing URDF generation information including repo path
+
+    Returns:
+        dict[str, Link]: Dictionary mapping occurrence names to Link objects
+    """
     all_occurrences = root.allOccurrences
     repo = urdf_infos["repo"]
 
@@ -135,21 +174,27 @@ def make_links(root: adsk.fusion.Component, urdf_infos: UrdfInfo) -> dict[str, L
     return links
 
 
-def make_link(occ: adsk.fusion.Occurrence, repo: str) -> "Link":
-    """
-    Create a Link instance from a Fusion 360 occurrence
+def make_link(occ: adsk.fusion.Occurrence, repo: str) -> Link:
+    """Create a Link instance from a Fusion 360 occurrence.
 
-    Parameters
-    ----------
-    occ : adsk.fusion.Occurrence
-        The occurrence to create a link from
-    repo : str
-        Repository path for the URDF
+    Extracts physical properties from the occurrence including mass, center of mass,
+    and inertia tensor. Identifies joint origins with names starting with "j_" and
+    uses them for coordinate transformations.
 
-    Returns
-    -------
-    Link
-        The created Link instance
+    Args:
+        occ: Fusion 360 occurrence to extract link data from
+        repo: Repository path for mesh file references
+
+    Returns:
+        Link: Link instance with extracted properties
+
+    Raises:
+        Exception: If occurrence has invalid number of joint origins (not exactly 1)
+
+    Note:
+        - Uses VeryHighCalculationAccuracy for physical property calculations
+        - Converts units from cm to m for distances and kg⋅cm² to kg⋅m² for inertia
+        - Transforms inertia tensor from world frame to center of mass frame
     """
     prop = occ.getPhysicalProperties(
         adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy  # type: ignore
