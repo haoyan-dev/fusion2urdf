@@ -1,8 +1,9 @@
 import math
+from typing import Optional
+
+# pyright: reportMissingImports=false
 import adsk
 import adsk.core
-import adsk.fusion
-from typing import Optional, Union
 
 
 class Transform:

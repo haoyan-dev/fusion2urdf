@@ -6,25 +6,23 @@ Created on Sun May 12 20:46:26 2019
 """
 
 import os
-from typing import Any
 from xml.etree.ElementTree import Element, SubElement
-
-import adsk
 
 from ..core import Joint, Link
 from ..utils import utils
+from ..utils.utils import UrdfInfo
 
 
-def write_link_urdf(file_name: str, links: dict[str, Link]):
+def write_link_urdf(file_name: str, links: dict[str, Link]) -> None:
     """
     Write links information into urdf "repo/file_name"
-
 
     Parameters
     ----------
     file_name: str
         urdf full path
-    links: list[Link]
+    links: dict[str, Link]
+        Dictionary of Link objects keyed by link name
     """
     with open(file_name, mode="a") as f:
         for link_name, link in links.items():
@@ -33,7 +31,7 @@ def write_link_urdf(file_name: str, links: dict[str, Link]):
             f.write("\n")
 
 
-def write_joint_urdf(file_name: str, joints: dict[str, Joint]):
+def write_joint_urdf(file_name: str, joints: dict[str, Joint]) -> None:
     """
     Write joints information into urdf "repo/file_name"
 
@@ -41,7 +39,8 @@ def write_joint_urdf(file_name: str, joints: dict[str, Joint]):
     ----------
     file_name: str
         urdf full path
-    joints: list[Joint]
+    joints: dict[str, Joint]
+        Dictionary of Joint objects keyed by joint name
     """
     with open(file_name, mode="a") as f:
         for joint_name, joint in joints.items():
@@ -53,7 +52,7 @@ def write_joint_urdf(file_name: str, joints: dict[str, Joint]):
             f.write("\n")
 
 
-def write_gazebo_endtag(file_name):
+def write_gazebo_endtag(file_name: str) -> None:
     """
     Write about gazebo_plugin and the </robot> tag at the end of the urdf
 
@@ -67,9 +66,7 @@ def write_gazebo_endtag(file_name):
         f.write("</robot>\n")
 
 
-def write_urdf(
-    urdf_infos: dict[str, Any],
-):
+def write_urdf(urdf_infos: UrdfInfo) -> None:
     package_name = urdf_infos["package_name"]
     robot_name = urdf_infos["robot_name"]
     urdf_dir = urdf_infos["urdf_dir"]
@@ -105,7 +102,7 @@ def write_urdf(
     write_gazebo_endtag(file_name)
 
 
-def write_materials_xacro(urdf_infos: dict[str, str]):
+def write_materials_xacro(urdf_infos: UrdfInfo) -> None:
     robot_name = urdf_infos["robot_name"]
     urdf_dir = urdf_infos["urdf_dir"]
     file_name = os.path.join(urdf_dir, "materials.xacro")  # the name of urdf file
@@ -125,21 +122,14 @@ def write_materials_xacro(urdf_infos: dict[str, str]):
         f.write("</robot>\n")
 
 
-def write_transmissions_xacro(urdf_infos: dict[str, Any]):
+def write_transmissions_xacro(urdf_infos: UrdfInfo) -> None:
     """
-    Write joints and transmission information into urdf "repo/file_name"
-
+    Write joints and transmission information into urdf transmission file
 
     Parameters
     ----------
-    joints_dict: dict
-        information of the each joint
-    repo: str
-        the name of the repository to save the xml file
-    links_xyz_dict: dict
-        xyz information of the each link
-    file_name: str
-        urdf full path
+    urdf_infos: UrdfInfo
+        Dictionary containing URDF generation information including joints
     """
     robot_name = urdf_infos["robot_name"]
     urdf_dir = urdf_infos["urdf_dir"]
@@ -164,7 +154,7 @@ def write_transmissions_xacro(urdf_infos: dict[str, Any]):
         f.write("</robot>\n")
 
 
-def write_gazebo_xacro(urdf_infos: dict[str, Any]):
+def write_gazebo_xacro(urdf_infos: UrdfInfo) -> None:
     robot_name = urdf_infos["robot_name"]
     urdf_dir = urdf_infos["urdf_dir"]
     joints: dict[str, Joint] = urdf_infos["joints"]
@@ -210,22 +200,19 @@ def write_gazebo_xacro(urdf_infos: dict[str, Any]):
         f.write("</robot>\n")
 
 
-def write_display_launch(urdf_infos: dict[str, Any]):
+def write_display_launch(urdf_infos: UrdfInfo) -> None:
     """
-    write display launch file "save_dir/launch/display.launch"
+    Write display launch file "launch_dir/display.launch"
 
-
-    Parameter
-    ---------
-    robot_name: str
-    name of the robot
-    save_dir: str
-    path of the repository to save
+    Parameters
+    ----------
+    urdf_infos: UrdfInfo
+        Dictionary containing URDF generation information
     """
     package_name = urdf_infos["package_name"]
     robot_name = urdf_infos["robot_name"]
     launch_dir = urdf_infos["launch_dir"]
-    
+
     launch = Element("launch")
 
     arg1 = SubElement(launch, "arg")
@@ -282,17 +269,14 @@ def write_display_launch(urdf_infos: dict[str, Any]):
         f.write(launch_xml)
 
 
-def write_gazebo_launch(urdf_infos: dict[str, Any]):
+def write_gazebo_launch(urdf_infos: UrdfInfo) -> None:
     """
-    write gazebo launch file "save_dir/launch/gazebo.launch"
+    Write gazebo launch file "launch_dir/gazebo.launch"
 
-
-    Parameter
-    ---------
-    robot_name: str
-        name of the robot
-    save_dir: str
-        path of the repository to save
+    Parameters
+    ----------
+    urdf_infos: UrdfInfo
+        Dictionary containing URDF generation information
     """
     package_name = urdf_infos["package_name"]
     robot_name = urdf_infos["robot_name"]
@@ -340,26 +324,19 @@ def write_gazebo_launch(urdf_infos: dict[str, Any]):
         f.write(launch_xml)
 
 
-def write_control_launch(urdf_infos: dict[str, Any]):
+def write_control_launch(urdf_infos: UrdfInfo) -> None:
     """
-    write control launch file "save_dir/launch/controller.launch"
+    Write control launch file "launch_dir/controller.launch"
 
-
-    Parameter
-    ---------
-    robot_name: str
-        name of the robot
-    save_dir: str
-        path of the repository to save
-    joints_dict: dict
-        information of the joints
+    Parameters
+    ----------
+    urdf_infos: UrdfInfo
+        Dictionary containing URDF generation information including joints
     """
     package_name = urdf_infos["package_name"]
     robot_name = urdf_infos["robot_name"]
     joints: dict[str, Joint] = urdf_infos["joints"]
     launch_dir = urdf_infos["launch_dir"]
-
-    controller_name = f"{robot_name}_controller"
     # rosparam = SubElement(launch, 'rosparam')
     # rosparam.attrib = {'file':'$(find {})/launch/controller.yaml'.format(package_name),
     #                   'command':'load'}
@@ -372,7 +349,7 @@ def write_control_launch(urdf_infos: dict[str, Any]):
     controller_args_str += "joint_state_controller "
 
     node_controller = Element("node")
-    node_controller.attrib = {  
+    node_controller.attrib = {
         "name": "controller_spawner",
         "pkg": "controller_manager",
         "type": "spawner",
@@ -411,19 +388,14 @@ def write_control_launch(urdf_infos: dict[str, Any]):
         f.write("</launch>")
 
 
-def write_yaml(urdf_infos: dict[str, Any]):
+def write_yaml(urdf_infos: UrdfInfo) -> None:
     """
-    write yaml file "save_dir/launch/controller.yaml"
+    Write YAML controller configuration file "launch_dir/controller.yaml"
 
-
-    Parameter
-    ---------
-    robot_name: str
-        name of the robot
-    save_dir: str
-        path of the repository to save
-    joints_dict: dict
-        information of the joints
+    Parameters
+    ----------
+    urdf_infos: UrdfInfo
+        Dictionary containing URDF generation information including joints
     """
     robot_name = urdf_infos["robot_name"]
     joints: dict[str, Joint] = urdf_infos["joints"]

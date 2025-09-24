@@ -10,13 +10,36 @@ import os.path
 import re
 import shutil  # Replaced distutils with shutil
 import sys
-from typing import Any
+from typing import TypedDict
 from xml.dom import minidom
 from xml.etree import ElementTree
 
+# pyright: reportMissingImports=false
 import adsk
 import adsk.core
 import adsk.fusion
+
+# Import for type hints - avoid circular imports by using TYPE_CHECKING
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..core.Joint import Joint
+    from ..core.Link import Link
+
+
+class UrdfInfo(TypedDict):
+    """Type definition for URDF information dictionary."""
+
+    robot_name: str
+    package_name: str
+    package_dir: str
+    package_template_dir: str
+    urdf_dir: str
+    meshes_dir: str
+    launch_dir: str
+    repo: str
+    joints: "dict[str, Joint]"
+    links: "dict[str, Link]"
 
 
 def convert_occ_name(occ_name: str) -> str:
@@ -40,11 +63,27 @@ def convert_occ_name(occ_name: str) -> str:
     return occ_name
 
 
+def make_package_structure(urdf_infos: UrdfInfo) -> None:
+    package_dir = urdf_infos["package_dir"]
+    meshes_dir = urdf_infos["meshes_dir"]
+    urdf_dir = urdf_infos["urdf_dir"]
+    launch_dir = urdf_infos["launch_dir"]
+
+    if not os.path.exists(package_dir):
+        os.makedirs(package_dir)
+    if not os.path.exists(meshes_dir):
+        os.makedirs(meshes_dir)
+    if not os.path.exists(urdf_dir):
+        os.makedirs(urdf_dir)
+    if not os.path.exists(launch_dir):
+        os.makedirs(launch_dir)
+
+
 def export_stl(
     design: adsk.fusion.Design,
-    urdf_infos: dict[str, Any],
+    urdf_infos: UrdfInfo,
     # occurrences: adsk.fusion.OccurrenceList,
-):
+) -> None:
     """
     export stl files into "save_dir/"
 
@@ -83,7 +122,7 @@ def export_stl(
             print("Component " + occ.component.name + " has something wrong.")
 
 
-def file_dialog(ui):
+def file_dialog(ui: adsk.core.UserInterface) -> str | bool:
     """
     display the dialog to save the file
     """
@@ -136,7 +175,7 @@ def prettify(elem):
     return reparsed.toprettyxml(indent="  ")
 
 
-def copy_package(urdf_infos: dict[str, Any]):
+def copy_package(urdf_infos: UrdfInfo) -> None:
     package_dir = urdf_infos["package_dir"]
     package_template_dir = urdf_infos["package_template_dir"]
 
@@ -145,7 +184,7 @@ def copy_package(urdf_infos: dict[str, Any]):
     )  # dirs_exist_ok=True allows overwriting
 
 
-def update_cmakelists(urdf_infos: dict[str, Any]):
+def update_cmakelists(urdf_infos: UrdfInfo) -> None:
     file_name = urdf_infos["package_dir"] + "/CMakeLists.txt"
 
     for line in fileinput.input(file_name, inplace=True):
@@ -155,7 +194,7 @@ def update_cmakelists(urdf_infos: dict[str, Any]):
             sys.stdout.write(line)
 
 
-def update_package_xml(urdf_infos: dict[str, Any]):
+def update_package_xml(urdf_infos: UrdfInfo) -> None:
     file_name = urdf_infos["package_dir"] + "/package.xml"
 
     for line in fileinput.input(file_name, inplace=True):
@@ -163,7 +202,9 @@ def update_package_xml(urdf_infos: dict[str, Any]):
             sys.stdout.write("  <name>" + urdf_infos["package_name"] + "</name>\n")
         elif "<description>" in line:
             sys.stdout.write(
-                "<description>The " + urdf_infos["package_name"] + " package</description>\n"
+                "<description>The "
+                + urdf_infos["package_name"]
+                + " package</description>\n"
             )
         else:
             sys.stdout.write(line)

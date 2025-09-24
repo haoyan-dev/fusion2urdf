@@ -5,15 +5,15 @@ Created on Sun May 12 20:11:28 2019
 @author: syuntoku
 """
 
-import re
-from typing import Optional, Tuple
+from typing import Optional
 from xml.etree.ElementTree import Element, SubElement
 
+# pyright: reportMissingImports=false
 import adsk
 import adsk.core
 import adsk.fusion
 
-from ..utils import convert_occ_name, utils
+from ..utils import convert_occ_name, prettify, origin2center_of_mass, UrdfInfo
 from ..utils.math_utils import Transform
 
 
@@ -23,7 +23,15 @@ class Link:
     Unit: m, kg, radian
     """
 
-    def __init__(self, name, center_of_mass, repo, mass, inertia_tensor, joint_origin_tf: Optional[adsk.core.Matrix3D] = None):
+    def __init__(
+        self,
+        name,
+        center_of_mass,
+        repo,
+        mass,
+        inertia_tensor,
+        joint_origin_tf: Optional[adsk.core.Matrix3D] = None,
+    ):
         """
         Parameters
         ----------
@@ -46,7 +54,9 @@ class Link:
         self.repo = repo
         self.mass = mass
         self.inertia_tensor = inertia_tensor
-        self.lMjo = Transform.from_Matrix3D(joint_origin_tf) if joint_origin_tf else Transform()
+        self.lMjo = (
+            Transform.from_Matrix3D(joint_origin_tf) if joint_origin_tf else Transform()
+        )
         self.joMl = self.lMjo.inverse()
 
     def make_link_xml(self) -> str:
@@ -111,57 +121,67 @@ class Link:
         }
 
         # print("\n".join(utils.prettify(link).split("\n")[1:]))
-        self.link_xml = "\n".join(utils.prettify(link).split("\n")[1:])
+        self.link_xml = "\n".join(prettify(link).split("\n")[1:])
 
         return self.link_xml
 
 
-def make_links(
-    all_occurrences: adsk.fusion.OccurrenceList, repo: str
-) -> Tuple[list, bool, str]:
+def make_links(root: adsk.fusion.Component, urdf_infos: UrdfInfo) -> dict[str, Link]:
+    all_occurrences = root.allOccurrences
+    repo = urdf_infos["repo"]
+
+    links = {occ.name: make_link(occ, repo) for occ in all_occurrences}
+
+    return links
+
+
+def make_link(occ: adsk.fusion.Occurrence, repo: str) -> "Link":
     """
+    Create a Link instance from a Fusion 360 occurrence
+
     Parameters
     ----------
-    root: adsk.fusion.Design.cast(product)
-        Root component
-    msg: str
-        Tell the status
+    occ : adsk.fusion.Occurrence
+        The occurrence to create a link from
+    repo : str
+        Repository path for the URDF
 
     Returns
-    ----------
-    links: list[Link]
-
-    msg: str
-        Tell the status
+    -------
+    Link
+        The created Link instance
     """
-    # Get component properties.
-    # Design: Lengths (cm), Angles (radians), Mass (kg)
-    allOccs = all_occurrences
-    links = []
+    prop = occ.getPhysicalProperties(
+        adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy  # type: ignore
+    )
+    component = occ.component
+    all_joint_origins = component.jointOrigins
 
-    for occ in allOccs:
+    # find the joint origin whose name has the prefix "j_"
+    j = [jo for jo in all_joint_origins if jo.name.startswith("j_")]
+    if len(j) != 1:
+        print("Invalid number of joint origins in " + occ.name)
+    joint_origin = j[0] if len(j) == 1 else None
 
-        prop = occ.getPhysicalProperties(
-            adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy  # type: ignore
-        )
+    name = convert_occ_name(occ.name)
 
-        name = convert_occ_name(occ.name)
+    mass = prop.mass  # kg
+    center_of_mass = [_ / 100.0 for _ in prop.centerOfMass.asArray()]  ## cm to m
 
-        mass = prop.mass  # kg
-        center_of_mass = [_ / 100.0 for _ in prop.centerOfMass.asArray()]  ## cm to m
+    # https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-ce341ee6-4490-11e5-b25b-f8b156d7cd97
+    (_, xx, yy, zz, xy, yz, xz) = prop.getXYZMomentsOfInertia()
+    moment_inertia_world = [
+        _ / 10000.0 for _ in [xx, yy, zz, xy, yz, xz]
+    ]  ## kg / cm^2 -> kg/m^2
+    inertia_tensor = origin2center_of_mass(moment_inertia_world, center_of_mass, mass)
 
-        # https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-ce341ee6-4490-11e5-b25b-f8b156d7cd97
-        (_, xx, yy, zz, xy, yz, xz) = prop.getXYZMomentsOfInertia()
-        moment_inertia_world = [
-            _ / 10000.0 for _ in [xx, yy, zz, xy, yz, xz]
-        ]  ## kg / cm^2 -> kg/m^2
-        inertia_tensor = utils.origin2center_of_mass(
-            moment_inertia_world, center_of_mass, mass
-        )
+    link = Link(
+        name,
+        center_of_mass,
+        repo,
+        mass,
+        inertia_tensor,
+        joint_origin.transform if joint_origin else None,
+    )
 
-        link = Link(name, center_of_mass, repo, mass, inertia_tensor)
-        links.append(link)
-
-    msg = "Successfully create links"
-    return links, True, msg
-
+    return link

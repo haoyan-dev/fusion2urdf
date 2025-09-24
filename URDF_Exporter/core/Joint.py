@@ -6,13 +6,14 @@ Created on Sun May 12 20:17:17 2019
 """
 
 from enum import Enum
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 from xml.etree.ElementTree import Element, SubElement
 
+# pyright: reportMissingImports=false
 import adsk
 import adsk.fusion
 
-from ..core.Link import Link
+# Link imports removed as they were unused in this module
 from ..utils import convert_occ_name, utils
 from ..utils.math_utils import Transform
 
@@ -139,86 +140,86 @@ class JointTypes(Enum):
 
 def make_joints(
     root: adsk.fusion.Component,
-    urdf_infos: dict[str, Any],
-) -> Tuple[dict[str, Joint], dict[str, Link], bool, str]:
+) -> dict[str, Joint]:
     """
-    Collect all the joints in the design and make Joint instances for each joint
-    Parameters
-    ----------
-    root: adsk.fusion.Design.cast(product)
-        Root component
-    msg: str
-        Tell the status
-    Returns
-    ----------
-    joints: [Joint, ...]
-        List of Joint instances
-    msg: str
-        Tell the status
-    Notes
-    ----------
-    Only Revolute, Rigid and Slider joints are supported for now.
-    The axis of the joint must be set.
-    The joint origin must be set for the second component of the joint.
-    The first component of the joint must be JointGeometry and the second component must be JointOrigin.
-    The unit of the angle limit is radian.
-    The unit of the slide limit is cm.
-    The unit of the translation of the joint origin is cm.
-    The unit of the rotation of the joint origin is radian.
-    The name of the parent and child link is the name of the component of the joint.
-    The name of the component is replaced ":", " ", "(", ")" with "_".
-    The name of the base component is "base_link".
-    Only one joint is allowed to connect to the base component.
-    The name of the joint is the name of the joint in Fusion 360.
-    The name of the joint must be unique.
-    The name of the joint is used as the name of the transmission.
-    The name of the transmission is the name of the joint + "_tran".
+    Extracts joint information from a Fusion 360 component and constructs a dictionary of Joint objects suitable for URDF export.
+    Args:
+        root (adsk.fusion.Component): The root Fusion 360 component containing all joints.
+    Returns:
+        dict[str, Joint]: A dictionary mapping joint names to Joint objects, each containing origin, axis, parent/child links, joint type, and limits.
+    Raises:
+        ValueError: If joint origins are not properly set, if joint axis/direction is not set, if angle limits are incomplete, or if an unsupported joint type is encountered.
+    Notes:
+        - Only revolute, prismatic (slider), and rigid joints are processed. Rigid joints are skipped.
+        - Joint origins and axes are extracted and transformed to the parent link frame.
+        - Joint limits are rounded to six decimal places.
     """
-    all_occurrences: adsk.fusion.OccurrenceList = root.allOccurrences
+
+    def get_axis_from_direction(
+        direction: int, joint_name: str, axis_type: str
+    ) -> list[float]:
+        """Convert direction index to axis vector."""
+        if direction == 0:  # X axis
+            return [1, 0, 0]
+        elif direction == 1:  # Y axis
+            return [0, 1, 0]
+        elif direction == 2:  # Z axis
+            return [0, 0, 1]
+        else:
+            raise ValueError(
+                f"{joint_name} has no {axis_type} axis set. Please set it and try again."
+            )
+
+    def process_revolute_joint(
+        motion: Any, fusion_joint_name: str
+    ) -> tuple[str, list[float], float, float]:
+        """Process revolute joint and return type, axis, and limits."""
+        axis = get_axis_from_direction(
+            motion.rotationAxis, fusion_joint_name, "rotation"
+        )
+
+        if (
+            motion.rotationLimits.isMaximumValueEnabled
+            and motion.rotationLimits.isMinimumValueEnabled
+        ):
+            joint_type = "revolute"
+            upper_limit = round(motion.rotationLimits.maximumValue, 6)
+            lower_limit = round(motion.rotationLimits.minimumValue, 6)
+        elif (
+            not motion.rotationLimits.isMaximumValueEnabled
+            and not motion.rotationLimits.isMinimumValueEnabled
+        ):
+            joint_type = "continuous"
+            upper_limit = 0.0
+            lower_limit = 0.0
+        else:
+            raise ValueError(
+                f"{fusion_joint_name} has incomplete angle limits. Please set both or neither."
+            )
+
+        return joint_type, axis, upper_limit, lower_limit
+
+    def process_prismatic_joint(
+        motion: Any, fusion_joint_name: str
+    ) -> tuple[str, list[float], float, float]:
+        """Process prismatic joint and return type, axis, and limits."""
+        axis = get_axis_from_direction(
+            motion.slideDirection, fusion_joint_name, "slide direction"
+        )
+
+        upper_limit = 0.0
+        lower_limit = 0.0
+        if (
+            motion.slideLimits.isMaximumValueEnabled
+            and motion.slideLimits.isMinimumValueEnabled
+        ):
+            upper_limit = round(motion.slideLimits.maximumValue, 6)
+            lower_limit = round(motion.slideLimits.minimumValue, 6)
+
+        return "prismatic", axis, upper_limit, lower_limit
+
     all_joints: list[adsk.fusion.Joint] = root.allJoints
-
     joints: dict[str, Joint] = {}
-    links: dict[str, Link] = {}
-
-    repo = urdf_infos["repo"]
-
-    def make_link(occ: adsk.fusion.Occurrence, repo: str) -> Link:
-        prop = occ.getPhysicalProperties(
-            adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy  # type: ignore
-        )
-        component = occ.component
-        all_joint_origins = component.jointOrigins
-
-        # find the joint origin whose name has the prefix "j_"
-        j = [jo for jo in all_joint_origins if jo.name.startswith("j_")]
-        if len(j) != 1:
-            print("Invalid number of joint origins in " + occ.name)
-        joint_origin = j[0] if len(j) == 1 else None
-
-        name = convert_occ_name(occ.name)
-
-        mass = prop.mass  # kg
-        center_of_mass = [_ / 100.0 for _ in prop.centerOfMass.asArray()]  ## cm to m
-
-        # https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-ce341ee6-4490-11e5-b25b-f8b156d7cd97
-        (_, xx, yy, zz, xy, yz, xz) = prop.getXYZMomentsOfInertia()
-        moment_inertia_world = [
-            _ / 10000.0 for _ in [xx, yy, zz, xy, yz, xz]
-        ]  ## kg / cm^2 -> kg/m^2
-        inertia_tensor = utils.origin2center_of_mass(
-            moment_inertia_world, center_of_mass, mass
-        )
-
-        link = Link(name, center_of_mass, repo, mass, inertia_tensor, joint_origin.transform if joint_origin else None)
-
-        return link
-
-    for occ in all_occurrences:
-        link = make_link(occ, repo)
-        links[occ.name] = link
-
-    print(f"Number of links: {len(links)}")
-    print(f"Names of links: {[link.name for link in links.values()]}")
 
     for fusion_joint in all_joints:
         child_occ = fusion_joint.occurrenceOne
@@ -230,86 +231,42 @@ def make_joints(
         if not isinstance(
             child_joint_origin, adsk.fusion.JointOrigin
         ) or not isinstance(parent_joint_origin, adsk.fusion.JointOrigin):
-            msg = (
-                fusion_joint.name
-                + " is not set its joint origin. Please set it and try again."
+            raise ValueError(
+                f"{fusion_joint.name} joint origins are not properly set. Please set them and try again."
             )
-            return {}, {}, False, msg
 
         motion: Any = fusion_joint.jointMotion
         fusion_joint_type = motion.jointType
 
-        axis = [0, 0, 0]
-        joint_upper_limit = 0.0
-        joint_lower_limit = 0.0
-
+        # Skip rigid joints as they don't need to be added to URDF
         if fusion_joint_type == JointTypes.RIGID.value:
-            joint_type = "fixed"
-            continue  # ignore rigid joint
-        elif fusion_joint_type == JointTypes.REVOLUTE.value:
-            if (
-                motion.rotationLimits.isMaximumValueEnabled
-                and motion.rotationLimits.isMinimumValueEnabled
-            ):
-                joint_upper_limit = round(motion.rotationLimits.maximumValue, 6)
-                joint_lower_limit = round(motion.rotationLimits.minimumValue, 6)
+            continue
 
-                joint_type = "revolute"
-                if motion.rotationAxis == 0:  # X axis
-                    axis = [1, 0, 0]
-                elif motion.rotationAxis == 1:  # Y axis
-                    axis = [0, 1, 0]
-                elif motion.rotationAxis == 2:  # Z axis
-                    axis = [0, 0, 1]
-                else:
-                    msg = (
-                        fusion_joint.name
-                        + " is not set its rotation axis. Please set it and try again."
-                    )
-                    return {}, {}, False, msg
-            elif (
-                not motion.rotationLimits.isMaximumValueEnabled
-                and not motion.rotationLimits.isMinimumValueEnabled
-            ):
-                joint_type = "continuous"
-                if motion.rotationAxis == 0:  # X axis
-                    axis = [1, 0, 0]
-                elif motion.rotationAxis == 1:  # Y axis
-                    axis = [0, 1, 0]
-                elif motion.rotationAxis == 2:  # Z axis
-                    axis = [0, 0, 1]
-                else:
-                    msg = (
-                        fusion_joint.name
-                        + " is not set its rotation axis. Please set it and try again."
-                    )
-                    return {}, {}, False, msg
-            else:
-                msg = (
-                    fusion_joint.name
-                    + " is not set its angle limit. Please set it and try again."
-                )
-                return {}, {}, False, msg
-
-        elif fusion_joint_type == JointTypes.SLIDER.value:
-            joint_type = "prismatic"
-
-        else:
-            msg = (
-                fusion_joint.name
-                + " is not supported joint type. Only Revolute, Rigid and Slider are supported for now."
+        # Process joint based on type
+        if fusion_joint_type == JointTypes.REVOLUTE.value:
+            joint_type, axis, joint_upper_limit, joint_lower_limit = (
+                process_revolute_joint(motion, fusion_joint.name)
             )
-            return {}, {}, False, msg
+        elif fusion_joint_type == JointTypes.SLIDER.value:
+            joint_type, axis, joint_upper_limit, joint_lower_limit = (
+                process_prismatic_joint(motion, fusion_joint.name)
+            )
+        else:
+            raise ValueError(
+                f"{fusion_joint.name} has unsupported joint type. Only Revolute, Rigid and Slider are supported."
+            )
 
         # calculate the origin of the joint
-        wMpo = Transform.from_Matrix3D(parent_occ.transform2)
-        wMco = Transform.from_Matrix3D(child_occ.transform2)
-        poMpj = Transform.from_Matrix3D(parent_joint_origin.transform)
-        coMcj = Transform.from_Matrix3D(child_joint_origin.transform)
-
-        wMcj = wMco * coMcj
-
-        origin = wMpo.inverse() * wMcj
+        # wMpl: world to parent link
+        wMpl = Transform.from_Matrix3D(parent_occ.transform2)
+        # wMcl: world to child link
+        wMcl = Transform.from_Matrix3D(child_occ.transform2)
+        # clMcj: child link to child joint origin
+        clMcj = Transform.from_Matrix3D(child_joint_origin.transform)
+        # wMcj: world to child joint origin
+        wMcj = wMcl * clMcj
+        # origin = plMcj: parent link to child joint origin
+        origin = wMpl.inverse() * wMcj
 
         parent_occ_name = convert_occ_name(parent_occ.name)
         child_occ_name = convert_occ_name(child_occ.name)
@@ -326,6 +283,4 @@ def make_joints(
         )
         joints[joint.name] = joint
 
-        msg = "All the joints are successfully collected."
-
-    return joints, links, True, msg
+    return joints

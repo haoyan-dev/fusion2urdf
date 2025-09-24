@@ -3,8 +3,8 @@
 
 import os
 import traceback
-from typing import Any
 
+# pyright: reportMissingImports=false
 import adsk
 import adsk.core
 import adsk.fusion
@@ -21,7 +21,15 @@ from .core import (
     write_urdf,
     write_yaml,
 )
-from .utils import utils
+from .utils import (
+    UrdfInfo,
+    copy_package,
+    export_stl,
+    file_dialog,
+    make_package_structure,
+    update_cmakelists,
+    update_package_xml,
+)
 
 """
 # length unit is 'cm' and inertial unit is 'kg/cm^2'
@@ -47,7 +55,7 @@ def run(context):
         ui = app.userInterface
         product = app.activeProduct
         design = adsk.fusion.Design.cast(product)
-        title = "Fusion2URDF"
+        title = "Fusion2URDFNG"
         if not design:
             ui.messageBox("No active Fusion design", title)
             return
@@ -55,41 +63,28 @@ def run(context):
         root = design.rootComponent  # root component
         components = design.allComponents
 
-        # set the names
-        # robot_name = root.name.split()[0]
-        # package_name = robot_name + "_description"
-        # save_dir = utils.file_dialog(ui)
-        # if save_dir == False:
-        #     ui.messageBox("Fusion2URDF was canceled", title)
-        #     return 0
-
-        # save_dir = save_dir + "/" + package_name
-        # try:
-        #     os.mkdir(save_dir)
-        # except FileExistsError:
-        #     ui.messageBox("Folder already exists. Continuing...", title)
-        #     pass
-        # except Exception as e:
-        #     ui.messageBox("Failed to create directory: {}".format(save_dir), title)
-        #     return 0
-
-        # package_dir = os.path.abspath(os.path.dirname(__file__)) + "/package/"
-
+        # --------------------
         # get user's download folder by default
-        home = os.path.expanduser("~")
-        download_dir = os.path.join(home, "Downloads")
-        save_dir = os.path.join(download_dir, "assets")
+        # home = os.path.expanduser("~")
+        # download_dir = os.path.join(home, "Downloads")
+        # save_dir = os.path.join(download_dir, "assets")
+        save_dir = file_dialog(ui)
+
+        if not save_dir:
+            ui.messageBox("Fusion2URDF was canceled", title)
+            return 0
+
+        assert isinstance(save_dir, str)
+
         robot_name = root.name.split()[0]
         package_name = robot_name + "_description"
         package_dir = os.path.join(save_dir, package_name)
         urdf_dir = os.path.join(package_dir, "urdf")
         meshes_dir = os.path.join(package_dir, "meshes")
         launch_dir = os.path.join(package_dir, "launch")
-        package_template_dir = os.path.abspath(
-            os.path.dirname(__file__) + "/package/"
-        )
+        package_template_dir = os.path.abspath(os.path.dirname(__file__) + "/package/")
 
-        urdf_infos: dict[str, Any] = {
+        urdf_infos: UrdfInfo = {
             "robot_name": robot_name,
             "package_name": package_name,
             "package_dir": package_dir,
@@ -98,56 +93,19 @@ def run(context):
             "meshes_dir": meshes_dir,
             "launch_dir": launch_dir,
             "repo": f"package://{package_name}/",
+            "joints": {},
+            "links": {},
         }
 
         # create package directory
-        if not os.path.exists(package_dir):
-            os.makedirs(package_dir)
+        make_package_structure(urdf_infos)
 
-        # create urdf directory
-        if not os.path.exists(os.path.join(package_dir, "urdf")):
-            os.makedirs(os.path.join(package_dir, "urdf"))
-    
-        # create meshes directory
-        if not os.path.exists(os.path.join(package_dir, "meshes")):
-            os.makedirs(os.path.join(package_dir, "meshes"))
-        # create launch directory
-        if not os.path.exists(os.path.join(package_dir, "launch")):
-            os.makedirs(os.path.join(package_dir, "launch"))
+        # Generate links
+        urdf_infos["links"] = make_links(root, urdf_infos)
+        # Generate joints_dict. All joints are related to root.
+        urdf_infos["joints"] = make_joints(root)
 
-        # Check all occurrences
-        all_occurrences = root.allOccurrences
-        # for occ in all_occurrences:
-        #     ui.messageBox("Component: " + occ.component.name, title)
-        #     ui.messageBox(
-        #         "Transform: "
-        #         + str(occ.transform2.asArray())
-        #         + "\n"
-        #         + "Is Grounded: "
-        #         + str(occ.isGrounded),
-        #         title,
-        #     )
-
-        for occ in all_occurrences:
-            if occ != root:
-                print("Component: " + occ.component.name)
-                pass
-            else:
-                print("Root Component: " + occ.component.name)
-                pass
-
-        # Check joints
-        joints, links, success, msg = make_joints(
-            root, urdf_infos
-        )
-
-        urdf_infos["joints"] = joints
-        urdf_infos["links"] = links
-
-        # save_dir = utils.file_dialog(ui)
-        # if not save_dir:
-        #     ui.messageBox("Fusion2URDF was canceled", title)
-        #     return 0
+        # write files
         write_urdf(urdf_infos)
         write_materials_xacro(urdf_infos)
         write_transmissions_xacro(urdf_infos)
@@ -158,52 +116,15 @@ def run(context):
         write_yaml(urdf_infos)
 
         # copy over package files
-        utils.copy_package(urdf_infos)
-        utils.update_cmakelists(urdf_infos)
-        utils.update_package_xml(urdf_infos)
-        utils.export_stl(design, urdf_infos)
-
-        print("Completed STL export to: " + urdf_infos["package_dir"])
-
-        return 0
-        # --------------------
-
-        # Generate inertial_dict
-
-        ui.messageBox(msg, title)
-        if not success:
-            return 0
-
-        ui.messageBox(msg, title)
-
-        # Generate joints_dict. All joints are related to root.
-        joints, success, msg = make_joints(root)
-        ui.messageBox(msg, title)
-
-        if not success:
-            return 0
-
-        # --------------------
-        # Generate URDF
-        write_urdf(joints, links, package_name, robot_name, save_dir)
-        write_materials_xacro(robot_name, save_dir)
-        write_transmissions_xacro(joints, robot_name, save_dir)
-        write_gazebo_xacro(joints, robot_name, save_dir)
-        write_display_launch(package_name, robot_name, save_dir)
-        write_gazebo_launch(package_name, robot_name, save_dir)
-        write_control_launch(package_name, robot_name, save_dir, joints)
-        write_yaml(joints, robot_name, save_dir)
-
-        # copy over package files
-        utils.copy_package(save_dir, package_dir)
-        utils.update_cmakelists(save_dir, package_name)
-        utils.update_package_xml(save_dir, package_name)
-
-        # Generate STl files
-        utils.export_stl(design, save_dir, components)
+        copy_package(urdf_infos)
+        update_cmakelists(urdf_infos)
+        update_package_xml(urdf_infos)
+        export_stl(design, urdf_infos)
 
         ui.messageBox(msg, title)
 
     except Exception:
         if ui:
             ui.messageBox("Failed:\n{}".format(traceback.format_exc()))
+
+    return 0
