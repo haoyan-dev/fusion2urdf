@@ -1,101 +1,189 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sun May 12 19:15:34 2019
+"""Utility functions for URDF generation from Fusion 360.
 
+This module provides various utility functions for:
+- File and directory operations
+- STL mesh export from Fusion 360 components
+- XML processing and formatting
+- URDF package structure creation
+- Physical property calculations and transformations
+- Name conversion and validation
+
+Created on Sun May 12 19:15:34 2019
 @author: syuntoku
 """
 
-import adsk, adsk.core, adsk.fusion
-import os.path, re
-from xml.etree import ElementTree
-from xml.dom import minidom
-import shutil  # Replaced distutils with shutil
 import fileinput
+import os.path
+import re
+import shutil
 import sys
+from typing import TYPE_CHECKING, TypedDict
+from xml.dom import minidom
+from xml.etree import ElementTree
 
-def copy_occs(root):    
-    """    
-    duplicate all the components
-    """    
-    def copy_body(allOccs, occs):
-        """    
-        copy the old occs to new component
-        """
-        
-        bodies = occs.bRepBodies
-        transform = adsk.core.Matrix3D.create()
-        
-        # Create new components from occs
-        # This support even when a component has some occses. 
+# pyright: reportMissingImports=false
+import adsk
+import adsk.core
+import adsk.fusion
 
-        new_occs = allOccs.addNewComponent(transform)  # this create new occs
-        if occs.component.name == 'base_link':
-            occs.component.name = 'old_component'
-            new_occs.component.name = 'base_link'
-        else:
-            new_occs.component.name = re.sub('[ :()]', '_', occs.name)
-        new_occs = allOccs.item((allOccs.count-1))
-        for i in range(bodies.count):
-            body = bodies.item(i)
-            body.copyToComponent(new_occs)
-    
-    allOccs = root.occurrences
-    oldOccs = []
-    coppy_list = [occs for occs in allOccs]
-    for occs in coppy_list:
-        if occs.bRepBodies.count > 0:
-            copy_body(allOccs, occs)
-            oldOccs.append(occs)
-
-    for occs in oldOccs:
-        occs.component.name = 'old_component'
+# Import for type hints - avoid circular imports by using TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..core.Joint import Joint
+    from ..core.Link import Link
 
 
-def export_stl(design, save_dir, components):  
+class UrdfInfo(TypedDict):
+    """Type definition for URDF generation information dictionary.
+
+    Contains all necessary information for generating URDF files and
+    associated ROS package structure from Fusion 360 designs.
+
+    Attributes:
+        robot_name: Name of the robot (used in URDF and file names)
+        package_name: Name of the ROS package
+        package_dir: Full path to the package directory
+        package_template_dir: Path to the package template directory
+        urdf_dir: Directory path for URDF files
+        meshes_dir: Directory path for mesh files (STL)
+        launch_dir: Directory path for launch files
+        repo: Repository reference string for mesh file paths in URDF
+        joints: Dictionary of Joint objects keyed by joint name
+        links: Dictionary of Link objects keyed by link name
     """
-    export stl files into "save_dir/"
-    
-    Parameters
-    ----------
-    design: adsk.fusion.Design.cast(product)
-    save_dir: str
-        directory path to save
-    components: design.allComponents
+
+    robot_name: str
+    package_name: str
+    package_dir: str
+    package_template_dir: str
+    urdf_dir: str
+    meshes_dir: str
+    launch_dir: str
+    repo: str
+    joints: "dict[str, Joint]"
+    links: "dict[str, Link]"
+
+
+def convert_occ_name(occ_name: str) -> str:
+    """Convert Fusion 360 occurrence name to valid URDF link/joint name.
+
+    Removes version suffixes (e.g., ":1", ":2") from Fusion 360 occurrence names
+    to create clean, consistent names for URDF links and joints.
+
+    Args:
+        occ_name: Original occurrence name from Fusion 360
+
+    Returns:
+        str: Cleaned name suitable for URDF (version suffix removed)
+
+    Example:
+        >>> convert_occ_name("wheel:1")
+        "wheel"
+        >>> convert_occ_name("base_link:2")
+        "base_link"
     """
-          
+    # The pattern is xxx:1, find the ":1" part and remove it
+    if re.search(":[0-9]+$", occ_name):
+        occ_name = re.sub(":[0-9]+$", "", occ_name)
+    return occ_name
+
+
+def make_package_structure(urdf_infos: UrdfInfo) -> None:
+    """Create the directory structure for a ROS package.
+
+    Creates all necessary directories for a complete ROS package including:
+    - Main package directory
+    - meshes/ subdirectory for STL files
+    - urdf/ subdirectory for URDF files
+    - launch/ subdirectory for launch files
+
+    Args:
+        urdf_infos: Dictionary containing directory paths
+
+    Note:
+        Creates directories recursively if they don't exist. Safe to call
+        multiple times - will not overwrite existing directories.
+    """
+    package_dir = urdf_infos["package_dir"]
+    meshes_dir = urdf_infos["meshes_dir"]
+    urdf_dir = urdf_infos["urdf_dir"]
+    launch_dir = urdf_infos["launch_dir"]
+
+    if not os.path.exists(package_dir):
+        os.makedirs(package_dir)
+    if not os.path.exists(meshes_dir):
+        os.makedirs(meshes_dir)
+    if not os.path.exists(urdf_dir):
+        os.makedirs(urdf_dir)
+    if not os.path.exists(launch_dir):
+        os.makedirs(launch_dir)
+
+
+def export_stl(
+    design: adsk.fusion.Design,
+    urdf_infos: UrdfInfo,
+) -> None:
+    """Export STL mesh files for all occurrences in a Fusion 360 design.
+
+    Processes all occurrences in the design's root component and exports each
+    as an STL file to the meshes directory. Uses low mesh refinement for faster
+    export and smaller file sizes suitable for robotics applications.
+
+    Args:
+        design: Fusion 360 design object containing the robot model
+        urdf_infos: Dictionary containing mesh directory path and other info
+
+    Note:
+        - Exports in ASCII STL format (not binary)
+        - Uses MeshRefinementLow for performance
+        - Prints progress and error messages to console
+        - Skips components that cannot be exported due to errors
+    """
+
     # create a single exportManager instance
     exportMgr = design.exportManager
-    # get the script location
-    try: os.mkdir(save_dir + '/meshes')
-    except: pass
-    scriptDir = save_dir + '/meshes'  
+    meshes_dir = urdf_infos["meshes_dir"]
+
     # export the occurrence one by one in the component to a specified file
-    for component in components:
-        allOccus = component.allOccurrences
-        for occ in allOccus:
-            if 'old_component' not in occ.component.name:
-                try:
-                    print(occ.component.name)
-                    fileName = scriptDir + "/" + occ.component.name              
-                    # create stl exportOptions
-                    stlExportOptions = exportMgr.createSTLExportOptions(occ, fileName)
-                    stlExportOptions.sendToPrintUtility = False
-                    stlExportOptions.isBinaryFormat = True
-                    # options are .MeshRefinementLow .MeshRefinementMedium .MeshRefinementHigh
-                    stlExportOptions.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementLow
-                    exportMgr.execute(stlExportOptions)
-                except:
-                    print('Component ' + occ.component.name + ' has something wrong.')
+    occurrences = design.rootComponent.allOccurrences
+
+    for occ in occurrences:
+        try:
+            print(occ.component.name)
+            fileName = meshes_dir + "/" + occ.component.name
+            # create stl exportOptions
+            stlExportOptions = exportMgr.createSTLExportOptions(occ.component, fileName)
+            stlExportOptions.sendToPrintUtility = False
+            stlExportOptions.isBinaryFormat = False
+            # options are .MeshRefinementLow .MeshRefinementMedium .MeshRefinementHigh
+            stlExportOptions.meshRefinement = (
+                adsk.fusion.MeshRefinementSettings.MeshRefinementLow  # type: ignore
+            )
+            print("Exporting " + occ.component.name + " to " + fileName)
+            print(f"Unit: {stlExportOptions.unitType}")
+
+            exportMgr.execute(stlExportOptions)
+        except Exception:
+            print("Component " + occ.component.name + " has something wrong.")
 
 
-def file_dialog(ui):     
-    """
-    display the dialog to save the file
+def file_dialog(ui: adsk.core.UserInterface) -> str | bool:
+    """Display folder selection dialog for choosing output directory.
+
+    Opens a folder selection dialog allowing the user to choose where
+    to save the generated URDF package files.
+
+    Args:
+        ui: Fusion 360 user interface object
+
+    Returns:
+        str: Selected folder path if user clicked OK
+        bool: False if user cancelled the dialog
     """
     # Set styles of folder dialog.
     folderDlg = ui.createFolderDialog()
-    folderDlg.title = 'Fusion Folder Dialog' 
-    
+    folderDlg.title = "Fusion Folder Dialog"
+
     # Show folder dialog
     dlgResult = folderDlg.showDialog()
     if dlgResult == adsk.core.DialogResults.DialogOK:
@@ -103,80 +191,120 @@ def file_dialog(ui):
     return False
 
 
-def origin2center_of_mass(inertia, center_of_mass, mass):
-    """
-    convert the moment of the inertia about the world coordinate into 
-    that about center of mass coordinate
+def origin2center_of_mass(
+    inertia: list[float], center_of_mass: list[float], mass: float
+) -> list[float]:
+    """Transform inertia tensor from world origin to center of mass frame.
 
-    Parameters
-    ----------
-    moment of inertia about the world coordinate:  [xx, yy, zz, xy, yz, xz]
-    center_of_mass: [x, y, z]
-    
-    Returns
-    ----------
-    moment of inertia about center of mass : [xx, yy, zz, xy, yz, xz]
+    Applies the parallel axis theorem to convert inertia tensor values from
+    the world coordinate frame to the center of mass frame, as required by URDF.
+
+    Args:
+        inertia: Inertia tensor about world origin [ixx, iyy, izz, ixy, iyz, ixz]
+        center_of_mass: Center of mass coordinates [x, y, z] in meters
+        mass: Mass of the body in kilograms
+
+    Returns:
+        list[float]: Inertia tensor about center of mass [ixx, iyy, izz, ixy, iyz, ixz]
+                    in kg⋅m²
+
+    Note:
+        Uses the parallel axis theorem: I_cm = I_origin - m * d²
+        where d is the distance from origin to center of mass.
     """
     x = center_of_mass[0]
     y = center_of_mass[1]
     z = center_of_mass[2]
-    translation_matrix = [y**2 + z**2, x**2 + z**2, x**2 + y**2,
-                         -x*y, -y*z, -x*z]
-    return [round(i - mass*t, 6) for i, t in zip(inertia, translation_matrix)]
+    translation_matrix = [y**2 + z**2, x**2 + z**2, x**2 + y**2, -x * y, -y * z, -x * z]
+    return [round(i - mass * t, 6) for i, t in zip(inertia, translation_matrix)]
 
 
-def prettify(elem):
+def prettify(elem: ElementTree.Element) -> str:
+    """Format XML element as pretty-printed string with proper indentation.
+
+    Converts an XML ElementTree element to a nicely formatted string with
+    consistent indentation for better readability in generated URDF files.
+
+    Args:
+        elem: XML ElementTree element to format
+
+    Returns:
+        str: Pretty-printed XML string with 2-space indentation
+
+    Note:
+        Uses UTF-8 encoding and 2-space indentation for consistency.
     """
-    Return a pretty-printed XML string for the Element.
-    
-    Parameters
-    ----------
-    elem : xml.etree.ElementTree.Element
-    
-    Returns
-    ----------
-    pretified xml : str
-    """
-    rough_string = ElementTree.tostring(elem, 'utf-8')
+    rough_string = ElementTree.tostring(elem, "utf-8")
     reparsed = minidom.parseString(rough_string)
     return reparsed.toprettyxml(indent="  ")
 
 
-def copy_package(save_dir, package_dir):
-    try:
-        # Check if the target directory exists, if not, create it
-        if not os.path.exists(save_dir + '/launch'):
-            os.mkdir(save_dir + '/launch')
-        if not os.path.exists(save_dir + '/urdf'):
-            os.mkdir(save_dir + '/urdf')
-        
-        # Check if the package directory exists and copy it
-        if os.path.exists(package_dir):
-            shutil.copytree(package_dir, save_dir, dirs_exist_ok=True)  # dirs_exist_ok=True allows overwriting
-        else:
-            print(f"Package directory '{package_dir}' does not exist.")
-        
-    except Exception as e:
-        print(f"Error copying package: {e}")
+def copy_package(urdf_infos: UrdfInfo) -> None:
+    """Copy ROS package template files to the target package directory.
+
+    Copies all files from the package template directory to create the basic
+    ROS package structure with CMakeLists.txt, package.xml, and other necessary files.
+
+    Args:
+        urdf_infos: Dictionary containing package_dir and package_template_dir paths
+
+    Note:
+        Uses dirs_exist_ok=True to allow overwriting existing directories.
+        Template files will be customized later by update functions.
+    """
+    package_dir = urdf_infos["package_dir"]
+    package_template_dir = urdf_infos["package_template_dir"]
+
+    shutil.copytree(
+        package_template_dir, package_dir, dirs_exist_ok=True
+    )  # dirs_exist_ok=True allows overwriting
 
 
-def update_cmakelists(save_dir, package_name):
-    file_name = save_dir + '/CMakeLists.txt'
+def update_cmakelists(urdf_infos: UrdfInfo) -> None:
+    """Update CMakeLists.txt with the correct package name.
+
+    Modifies the CMakeLists.txt file in the package directory to replace
+    the template project name with the actual package name.
+
+    Args:
+        urdf_infos: Dictionary containing package_name and package_dir
+
+    Note:
+        Performs in-place file editing to replace "project(fusion2urdf)"
+        with "project({package_name})".
+    """
+    file_name = urdf_infos["package_dir"] + "/CMakeLists.txt"
 
     for line in fileinput.input(file_name, inplace=True):
-        if 'project(fusion2urdf)' in line:
-            sys.stdout.write("project(" + package_name + ")\n")
+        if "project(fusion2urdf)" in line:
+            sys.stdout.write("project(" + urdf_infos["package_name"] + ")\n")
         else:
             sys.stdout.write(line)
 
 
-def update_package_xml(save_dir, package_name):
-    file_name = save_dir + '/package.xml'
+def update_package_xml(urdf_infos: UrdfInfo) -> None:
+    """Update package.xml with the correct package name and description.
+
+    Modifies the package.xml file to replace template values with the actual
+    package name and generates an appropriate description.
+
+    Args:
+        urdf_infos: Dictionary containing package_name and package_dir
+
+    Note:
+        Updates both the <name> tag and <description> tag with package-specific values.
+        Performs in-place file editing.
+    """
+    file_name = urdf_infos["package_dir"] + "/package.xml"
 
     for line in fileinput.input(file_name, inplace=True):
-        if '<name>' in line:
-            sys.stdout.write("  <name>" + package_name + "</name>\n")
-        elif '<description>' in line:
-            sys.stdout.write("<description>The " + package_name + " package</description>\n")
+        if "<name>" in line:
+            sys.stdout.write("  <name>" + urdf_infos["package_name"] + "</name>\n")
+        elif "<description>" in line:
+            sys.stdout.write(
+                "<description>The "
+                + urdf_infos["package_name"]
+                + " package</description>\n"
+            )
         else:
             sys.stdout.write(line)

@@ -38,9 +38,47 @@ This is a **fork** of the original [syuntoku14/fusion2urdf](https://github.com/s
 
 ## Installation
 
-Run the following command in your shell.
+### Quick Installation (Windows)
 
-##### Windows (In PowerShell)
+Use the provided PowerShell scripts for easy installation and management:
+
+##### Option 1: Using Install Script (Recommended)
+
+```powershell
+cd <path to fusion2urdf>
+.\install.ps1
+```
+
+##### Option 2: Using Install Script with Symbolic Link
+
+For development or if you want to keep the files in the original location:
+
+```powershell
+cd <path to fusion2urdf>
+.\install.ps1 -UseSymbolicLink
+```
+
+**Note:** Symbolic link option requires Administrator privileges.  
+On Windows 11 24H2 or later, you can use `sudo` to elevate privileges if needed.
+
+##### Force Installation (Overwrite existing)
+
+```powershell
+.\install.ps1 -Force
+```
+
+### Uninstallation
+
+To remove the URDF Exporter:
+
+```powershell
+cd <path to fusion2urdf>
+.\uninstall.ps1
+```
+
+### Manual Installation (Windows PowerShell)
+
+If you prefer to install manually:
 
 ```powershell
 cd <path to fusion2urdf>
