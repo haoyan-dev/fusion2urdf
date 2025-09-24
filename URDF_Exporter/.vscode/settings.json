@@ -1,6 +1,0 @@
-{
-	"python.autoComplete.extraPaths":	["C:/Users/haoyan.li/AppData/Roaming/Autodesk/Autodesk Fusion 360/API/Python/defs", "C:/Users/haoya/AppData/Roaming/Autodesk/Autodesk Fusion 360/API/Python/defs"],
-	"python.analysis.extraPaths":	["C:/Users/haoyan.li/AppData/Roaming/Autodesk/Autodesk Fusion 360/API/Python/defs", "C:/Users/haoya/AppData/Roaming/Autodesk/Autodesk Fusion 360/API/Python/defs"],
-	"python.defaultInterpreterPath": "C:/Users/haoya/AppData/Local/Autodesk/webdeploy/production/ca305acf3852cfce8e837ee5435adf649bc398ca/Python/python.exe",
-	"python.analysis.typeCheckingMode": "basic"
-}
