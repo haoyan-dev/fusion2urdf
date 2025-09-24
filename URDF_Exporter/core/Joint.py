@@ -121,6 +121,9 @@ class Joint:
                 "effort": "100",
                 "velocity": "100",
             }
+        if self.type == "fixed":
+            # fixed joint does not have axis and limit
+            pass
 
         self.joint_xml = "\n".join(utils.prettify(joint).split("\n")[1:])
 
@@ -286,12 +289,14 @@ def make_joints(
         motion: Any = fusion_joint.jointMotion
         fusion_joint_type = motion.jointType
 
-        # Skip rigid joints as they don't need to be added to URDF
+        # Process rigid joints to generate fixed joints in URDF
         if fusion_joint_type == JointTypes.RIGID.value:
-            continue
-
-        # Process joint based on type
-        if fusion_joint_type == JointTypes.REVOLUTE.value:
+            joint_type = "fixed"
+            axis = [0.0] * 3
+            joint_upper_limit = 0.0
+            joint_lower_limit = 0.0
+        elif fusion_joint_type == JointTypes.REVOLUTE.value:
+            # Process joint based on type
             joint_type, axis, joint_upper_limit, joint_lower_limit = (
                 process_revolute_joint(motion, fusion_joint.name)
             )
