@@ -5,7 +5,7 @@ Created on Sun May 12 20:11:28 2019
 @author: syuntoku
 """
 
-from typing import Tuple
+from typing import Optional, Tuple
 from ..utils.math_utils import Transform
 import adsk
 import adsk.fusion
@@ -20,7 +20,7 @@ class Link:
     Unit: m, kg, radian
     """
 
-    def __init__(self, name, center_of_mass, repo, mass, inertia_tensor):
+    def __init__(self, name, center_of_mass, repo, mass, inertia_tensor, joint_origin_tf: Optional[adsk.core.Matrix3D] = None):
         """
         Parameters
         ----------
@@ -43,9 +43,7 @@ class Link:
         self.repo = repo
         self.mass = mass
         self.inertia_tensor = inertia_tensor
-
-        self.transform: Transform = Transform()
-        self.offset: Transform = Transform()
+        self.joint_origin_tf = Transform.from_Matrix3D(joint_origin_tf) if joint_origin_tf else Transform()
 
     def make_link_xml(self) -> str:
         """
@@ -74,13 +72,14 @@ class Link:
             "ixz": str(self.inertia_tensor[5]),
         }
 
+        # STL file has no unit. We assume the export from Fusion 360 is in meters.
         scale = 0.001
         # visual
         visual = SubElement(link, "visual")
         origin_v = SubElement(visual, "origin")
         origin_v.attrib = {
-            "xyz": " ".join([str(round(el, 6)) for el in self.transform.translation]),
-            "rpy": " ".join([str(round(el, 6)) for el in self.transform.rotation]),
+            "xyz": " ".join([str(round(el, 6)) for el in self.joint_origin_tf.translation]),
+            "rpy": " ".join([str(round(el, 6)) for el in self.joint_origin_tf.rotation]),
         }
         geometry_v = SubElement(visual, "geometry")
         mesh_v = SubElement(geometry_v, "mesh")
@@ -95,8 +94,8 @@ class Link:
         collision = SubElement(link, "collision")
         origin_c = SubElement(collision, "origin")
         origin_c.attrib = {
-            "xyz": " ".join([str(round(el, 6)) for el in self.transform.translation]),
-            "rpy": " ".join([str(round(el, 6)) for el in self.transform.rotation]),
+            "xyz": " ".join([str(round(el, 6)) for el in self.joint_origin_tf.translation]),
+            "rpy": " ".join([str(round(el, 6)) for el in self.joint_origin_tf.rotation]),
         }
         # origin_c.attrib = {"xyz": " ".join([str(_) for _ in self.xyz]), "rpy": "0 0 0"}
         geometry_c = SubElement(collision, "geometry")

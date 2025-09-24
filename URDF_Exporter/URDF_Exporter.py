@@ -126,12 +126,8 @@ def run(context):
                 pass
 
         # Check joints
-        all_joints = root.joints
-        links, success, msg = make_links(
-            all_occurrences, repo="package://robot_v1_description/"
-        )
-        joints, success, msg = make_joints(
-            all_joints, "package://robot_v1_description/", all_occurrences
+        joints, links, success, msg = make_joints(
+            root, "package://robot_v1_description/"
         )
 
         # save_dir = utils.file_dialog(ui)
@@ -141,6 +137,8 @@ def run(context):
         write_urdf(joints, links, "robot_v1_description", "robot_v1", save_dir)
 
         utils.export_stl(design, package_dir, all_occurrences)
+
+        print("Completed STL export to: " + package_dir)
 
         return 0
         # --------------------

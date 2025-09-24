@@ -137,10 +137,9 @@ class JointTypes(Enum):
 
 
 def make_joints(
-    all_joints: adsk.fusion.Joints,
+    root: adsk.fusion.Component,
     repo: str,
-    all_occurrences: adsk.fusion.OccurrenceList,
-) -> Tuple[list[Joint], bool, str]:
+) -> Tuple[dict[str, Joint], dict[str, Link], bool, str]:
     """
     Collect all the joints in the design and make Joint instances for each joint
     Parameters
@@ -174,6 +173,8 @@ def make_joints(
     The name of the joint is used as the name of the transmission.
     The name of the transmission is the name of the joint + "_tran".
     """
+    all_occurrences: adsk.fusion.OccurrenceList = root.allOccurrences
+    all_joints: adsk.fusion.Joints = root.allJoints
 
     joints: dict[str, Joint] = {}
     links: dict[str, Link] = {}
@@ -182,6 +183,14 @@ def make_joints(
         prop = occ.getPhysicalProperties(
             adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy  # type: ignore
         )
+        component = occ.component
+        all_joint_origins = component.jointOrigins
+
+        # find the joint origin whose name has the prefix "j_"
+        j = [jo for jo in all_joint_origins if jo.name.startswith("j_")]
+        if len(j) != 1:
+            print("Invalid number of joint origins in " + occ.name)
+        joint_origin = j[0] if len(j) == 1 else None
 
         name = convert_occ_name(occ.name)
 
@@ -197,13 +206,16 @@ def make_joints(
             moment_inertia_world, center_of_mass, mass
         )
 
-        link = Link(name, center_of_mass, repo, mass, inertia_tensor)
+        link = Link(name, center_of_mass, repo, mass, inertia_tensor, joint_origin.transform if joint_origin else None)
 
         return link
 
     for occ in all_occurrences:
         link = make_link(occ, repo)
         links[occ.name] = link
+
+    print(f"Number of links: {len(links)}")
+    print(f"Names of links: {[link.name for link in links.values()]}")
 
     for fusion_joint in all_joints:
         child_occ = fusion_joint.occurrenceOne
@@ -219,13 +231,15 @@ def make_joints(
                 fusion_joint.name
                 + " is not set its joint origin. Please set it and try again."
             )
-            return [], False, msg
+            return {}, {}, False, msg
 
         child_link = links[child_occ.name]
         # set offset from the origin of the child link to the joint origin
         oMj = Transform.from_Matrix3D(child_joint_origin.transform)
         oMl = Transform.from_Matrix3D(child_occ.transform2)
         child_link.offset = oMl.inverse() * oMj
+
+
 
         motion: Any = fusion_joint.jointMotion
         fusion_joint_type = motion.jointType
@@ -257,7 +271,7 @@ def make_joints(
                         fusion_joint.name
                         + " is not set its rotation axis. Please set it and try again."
                     )
-                    return [], False, msg
+                    return {}, {}, False, msg
             elif (
                 not motion.rotationLimits.isMaximumValueEnabled
                 and not motion.rotationLimits.isMinimumValueEnabled
@@ -274,13 +288,13 @@ def make_joints(
                         fusion_joint.name
                         + " is not set its rotation axis. Please set it and try again."
                     )
-                    return [], False, msg
+                    return {}, {}, False, msg
             else:
                 msg = (
                     fusion_joint.name
                     + " is not set its angle limit. Please set it and try again."
                 )
-                return [], False, msg
+                return {}, {}, False, msg
 
         elif fusion_joint_type == JointTypes.SLIDER.value:
             joint_type = "prismatic"
@@ -290,13 +304,17 @@ def make_joints(
                 fusion_joint.name
                 + " is not supported joint type. Only Revolute, Rigid and Slider are supported for now."
             )
-            return [], False, msg
+            return {}, {}, False, msg
 
         # calculate the origin of the joint
-        oMp = Transform.from_Matrix3D(parent_joint_origin.transform)
-        oMc = Transform.from_Matrix3D(child_joint_origin.transform)
+        wMpo = Transform.from_Matrix3D(parent_occ.transform2)
+        wMco = Transform.from_Matrix3D(child_occ.transform2)
+        poMpj = Transform.from_Matrix3D(parent_joint_origin.transform)
+        coMcj = Transform.from_Matrix3D(child_joint_origin.transform)
 
-        origin = oMp.inverse() * oMc
+        wMcj = wMco * coMcj
+
+        origin = wMpo.inverse() * wMcj
 
         parent_occ_name = convert_occ_name(parent_occ.name)
         child_occ_name = convert_occ_name(child_occ.name)
@@ -315,4 +333,4 @@ def make_joints(
 
         msg = "All the joints are successfully collected."
 
-    return list(joints.values()), True, msg
+    return joints, links, True, msg

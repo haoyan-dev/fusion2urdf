@@ -12,7 +12,7 @@ from ..core import Link, Joint
 from ..utils import utils
 
 
-def write_link_urdf(file_name: str, links: list[Link]):
+def write_link_urdf(file_name: str, links: dict[str, Link]):
     """
     Write links information into urdf "repo/file_name"
 
@@ -24,15 +24,13 @@ def write_link_urdf(file_name: str, links: list[Link]):
     links: list[Link]
     """
     with open(file_name, mode="a") as f:
-        for link in links:
-            if link.name == "base_link":
-                continue
+        for link_name, link in links.items():
             link_xml = link.make_link_xml()
             f.write(link_xml)
             f.write("\n")
 
 
-def write_joint_urdf(file_name: str, joints: list[Joint]):
+def write_joint_urdf(file_name: str, joints: dict[str, Joint]):
     """
     Write joints information into urdf "repo/file_name"
 
@@ -43,7 +41,7 @@ def write_joint_urdf(file_name: str, joints: list[Joint]):
     joints: list[Joint]
     """
     with open(file_name, mode="a") as f:
-        for joint in joints:
+        for joint_name, joint in joints.items():
             transmission_xml = joint.make_transmission_xml()
             joint_xml = joint.make_joint_xml()
             f.write(transmission_xml)
@@ -67,8 +65,8 @@ def write_gazebo_endtag(file_name):
 
 
 def write_urdf(
-    joints: list[Joint],
-    links: list[Link],
+    joints: dict[str, Joint],
+    links: dict[str, Link],
     package_name: str,
     robot_name: str,
     save_dir: str,
