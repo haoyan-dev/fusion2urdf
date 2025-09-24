@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 from ..utils.math_utils import Transform
 import adsk
 import adsk.fusion
+import adsk.core
 import re
 from xml.etree.ElementTree import Element, SubElement
 from ..utils import utils, convert_occ_name
@@ -43,7 +44,8 @@ class Link:
         self.repo = repo
         self.mass = mass
         self.inertia_tensor = inertia_tensor
-        self.joint_origin_tf = Transform.from_Matrix3D(joint_origin_tf) if joint_origin_tf else Transform()
+        self.lMjo = Transform.from_Matrix3D(joint_origin_tf) if joint_origin_tf else Transform()
+        self.joMl = self.lMjo.inverse()
 
     def make_link_xml(self) -> str:
         """
@@ -77,9 +79,10 @@ class Link:
         # visual
         visual = SubElement(link, "visual")
         origin_v = SubElement(visual, "origin")
+        # The urdf origin is at the joint origin, so use self.joMl to fix the visual and collision offset when there is an offset between the joint origin and the link origin.
         origin_v.attrib = {
-            "xyz": " ".join([str(round(el, 6)) for el in self.joint_origin_tf.translation]),
-            "rpy": " ".join([str(round(el, 6)) for el in self.joint_origin_tf.rotation]),
+            "xyz": " ".join([str(round(el, 6)) for el in self.joMl.translation]),
+            "rpy": " ".join([str(round(el, 6)) for el in self.joMl.rotation]),
         }
         geometry_v = SubElement(visual, "geometry")
         mesh_v = SubElement(geometry_v, "mesh")
@@ -94,8 +97,8 @@ class Link:
         collision = SubElement(link, "collision")
         origin_c = SubElement(collision, "origin")
         origin_c.attrib = {
-            "xyz": " ".join([str(round(el, 6)) for el in self.joint_origin_tf.translation]),
-            "rpy": " ".join([str(round(el, 6)) for el in self.joint_origin_tf.rotation]),
+            "xyz": " ".join([str(round(el, 6)) for el in self.joMl.translation]),
+            "rpy": " ".join([str(round(el, 6)) for el in self.joMl.rotation]),
         }
         # origin_c.attrib = {"xyz": " ".join([str(_) for _ in self.xyz]), "rpy": "0 0 0"}
         geometry_c = SubElement(collision, "geometry")
@@ -160,53 +163,3 @@ def make_links(
     msg = "Successfully create links"
     return links, True, msg
 
-
-# def make_inertial_dict(root, msg):
-#     """
-#     Parameters
-#     ----------
-#     root: adsk.fusion.Design.cast(product)
-#         Root component
-#     msg: str
-#         Tell the status
-
-#     Returns
-#     ----------
-#     inertial_dict: {name:{mass, inertia, center_of_mass}}
-
-#     msg: str
-#         Tell the status
-#     """
-#     # Get component properties.
-#     allOccs = root.occurrences
-#     inertial_dict = {}
-
-#     for occs in allOccs:
-#         # Skip the root component.
-#         occs_dict = {}
-#         prop = occs.getPhysicalProperties(
-#             adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy
-#         )
-
-#         occs_dict["name"] = re.sub("[ :()]", "_", occs.name)
-
-#         mass = prop.mass  # kg
-#         occs_dict["mass"] = mass
-#         center_of_mass = [_ / 100.0 for _ in prop.centerOfMass.asArray()]  ## cm to m
-#         occs_dict["center_of_mass"] = center_of_mass
-
-#         # https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-ce341ee6-4490-11e5-b25b-f8b156d7cd97
-#         (_, xx, yy, zz, xy, yz, xz) = prop.getXYZMomentsOfInertia()
-#         moment_inertia_world = [
-#             _ / 10000.0 for _ in [xx, yy, zz, xy, yz, xz]
-#         ]  ## kg / cm^2 -> kg/m^2
-#         occs_dict["inertia"] = utils.origin2center_of_mass(
-#             moment_inertia_world, center_of_mass, mass
-#         )
-
-#         if occs.component.name == "base_link":
-#             inertial_dict["base_link"] = occs_dict
-#         else:
-#             inertial_dict[re.sub("[ :()]", "_", occs.name)] = occs_dict
-
-#     return inertial_dict, msg

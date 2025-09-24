@@ -5,6 +5,7 @@ Created on Sun May 12 19:15:34 2019
 @author: syuntoku
 """
 
+from typing import Any
 import adsk
 import adsk.core
 import adsk.fusion
@@ -40,8 +41,8 @@ def convert_occ_name(occ_name: str) -> str:
 
 def export_stl(
     design: adsk.fusion.Design,
-    package_dir: str,
-    occurrences: adsk.fusion.OccurrenceList,
+    urdf_infos: dict[str, Any],
+    # occurrences: adsk.fusion.OccurrenceList,
 ):
     """
     export stl files into "save_dir/"
@@ -56,18 +57,15 @@ def export_stl(
 
     # create a single exportManager instance
     exportMgr = design.exportManager
-    # get the script location
-    try:
-        os.mkdir(package_dir + "/meshes")
-    except FileExistsError:
-        pass
-
-    scriptDir = package_dir + "/meshes"
+    meshes_dir = urdf_infos["meshes_dir"]
+    
     # export the occurrence one by one in the component to a specified file
+    occurrences = design.rootComponent.allOccurrences
+
     for occ in occurrences:
         try:
             print(occ.component.name)
-            fileName = scriptDir + "/" + occ.component.name
+            fileName = meshes_dir + "/" + occ.component.name
             # create stl exportOptions
             stlExportOptions = exportMgr.createSTLExportOptions(occ.component, fileName)
             stlExportOptions.sendToPrintUtility = False
@@ -137,45 +135,34 @@ def prettify(elem):
     return reparsed.toprettyxml(indent="  ")
 
 
-def copy_package(save_dir, package_dir):
-    try:
-        # Check if the target directory exists, if not, create it
-        if not os.path.exists(save_dir + "/launch"):
-            os.mkdir(save_dir + "/launch")
-        if not os.path.exists(save_dir + "/urdf"):
-            os.mkdir(save_dir + "/urdf")
+def copy_package(urdf_infos: dict[str, Any]):
+    package_dir = urdf_infos["package_dir"]
+    package_template_dir = urdf_infos["package_template_dir"]
 
-        # Check if the package directory exists and copy it
-        if os.path.exists(package_dir):
-            shutil.copytree(
-                package_dir, save_dir, dirs_exist_ok=True
-            )  # dirs_exist_ok=True allows overwriting
-        else:
-            print(f"Package directory '{package_dir}' does not exist.")
-
-    except Exception as e:
-        print(f"Error copying package: {e}")
+    shutil.copytree(
+        package_template_dir, package_dir, dirs_exist_ok=True
+    )  # dirs_exist_ok=True allows overwriting
 
 
-def update_cmakelists(save_dir, package_name):
-    file_name = save_dir + "/CMakeLists.txt"
+def update_cmakelists(urdf_infos: dict[str, Any]):
+    file_name = urdf_infos["package_dir"] + "/CMakeLists.txt"
 
     for line in fileinput.input(file_name, inplace=True):
         if "project(fusion2urdf)" in line:
-            sys.stdout.write("project(" + package_name + ")\n")
+            sys.stdout.write("project(" + urdf_infos["package_name"] + ")\n")
         else:
             sys.stdout.write(line)
 
 
-def update_package_xml(save_dir, package_name):
-    file_name = save_dir + "/package.xml"
+def update_package_xml(urdf_infos: dict[str, Any]):
+    file_name = urdf_infos["package_dir"] + "/package.xml"
 
     for line in fileinput.input(file_name, inplace=True):
         if "<name>" in line:
-            sys.stdout.write("  <name>" + package_name + "</name>\n")
+            sys.stdout.write("  <name>" + urdf_infos["package_name"] + "</name>\n")
         elif "<description>" in line:
             sys.stdout.write(
-                "<description>The " + package_name + " package</description>\n"
+                "<description>The " + urdf_infos["package_name"] + " package</description>\n"
             )
         else:
             sys.stdout.write(line)

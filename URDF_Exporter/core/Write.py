@@ -5,6 +5,7 @@ Created on Sun May 12 20:46:26 2019
 @author: syuntoku
 """
 
+from typing import Any
 import adsk
 import os
 from xml.etree.ElementTree import Element, SubElement
@@ -65,20 +66,15 @@ def write_gazebo_endtag(file_name):
 
 
 def write_urdf(
-    joints: dict[str, Joint],
-    links: dict[str, Link],
-    package_name: str,
-    robot_name: str,
-    save_dir: str,
+    urdf_infos: dict[str, Any],
 ):
+    package_name = urdf_infos["package_name"]
+    robot_name = urdf_infos["robot_name"]
+    urdf_dir = urdf_infos["urdf_dir"]
+    joints: dict[str, Joint] = urdf_infos["joints"]
+    links: dict[str, Link] = urdf_infos["links"]
 
-    urdf_dir = os.path.join(save_dir, package_name, "urdf")
-    try:
-        os.mkdir(urdf_dir)
-    except Exception:
-        pass
-
-    file_name = os.path.join(urdf_dir, robot_name + ".xacro")
+    file_name = os.path.join(urdf_dir, f"{robot_name}.xacro")
 
     with open(file_name, mode="w") as f:
         f.write('<?xml version="1.0" ?>\n')
@@ -88,40 +84,30 @@ def write_urdf(
             )
         )
         f.write("\n")
-        # f.write(
-        #     '<xacro:include filename="$(find {})/urdf/materials.xacro" />'.format(
-        #         package_name
-        #     )
-        # )
-        # f.write("\n")
-        # f.write(
-        #     '<xacro:include filename="$(find {})/urdf/{}.trans" />'.format(
-        #         package_name, robot_name
-        #     )
-        # )
-        # f.write("\n")
-        # f.write(
-        #     '<xacro:include filename="$(find {})/urdf/{}.gazebo" />'.format(
-        #         package_name, robot_name
-        #     )
-        # )
-        # f.write("\n")
+        f.write(
+            f'<xacro:include filename="$(find {package_name})/urdf/materials.xacro" />'
+        )
+        f.write("\n")
+        f.write(
+            f'<xacro:include filename="$(find {package_name})/urdf/{robot_name}.trans" />'
+        )
+        f.write("\n")
+        f.write(
+            f'<xacro:include filename="$(find {package_name})/urdf/{robot_name}.gazebo" />'
+        )
+        f.write("\n")
 
     write_link_urdf(file_name, links)
     write_joint_urdf(file_name, joints)
 
-    # write_link_urdf(joints_dict, repo, links_xyz_dict, file_name, inertial_dict)
-    # write_joint_urdf(joints_dict, repo, links_xyz_dict, file_name)
     write_gazebo_endtag(file_name)
 
 
-def write_materials_xacro(robot_name, save_dir):
-    try:
-        os.mkdir(save_dir + "/urdf")
-    except Exception:
-        pass
+def write_materials_xacro(urdf_infos: dict[str, str]):
+    robot_name = urdf_infos["robot_name"]
+    urdf_dir = urdf_infos["urdf_dir"]
+    file_name = os.path.join(urdf_dir, "materials.xacro")  # the name of urdf file
 
-    file_name = save_dir + "/urdf/materials.xacro"  # the name of urdf file
     with open(file_name, mode="w") as f:
         f.write('<?xml version="1.0" ?>\n')
         f.write(
@@ -137,7 +123,7 @@ def write_materials_xacro(robot_name, save_dir):
         f.write("</robot>\n")
 
 
-def write_transmissions_xacro(joints: list[Joint], robot_name, save_dir):
+def write_transmissions_xacro(urdf_infos: dict[str, Any]):
     """
     Write joints and transmission information into urdf "repo/file_name"
 
@@ -153,8 +139,11 @@ def write_transmissions_xacro(joints: list[Joint], robot_name, save_dir):
     file_name: str
         urdf full path
     """
+    robot_name = urdf_infos["robot_name"]
+    urdf_dir = urdf_infos["urdf_dir"]
+    joints: dict[str, Joint] = urdf_infos["joints"]
+    file_name = os.path.join(urdf_dir, f"{robot_name}.trans")  # the name of urdf file
 
-    file_name = save_dir + "/urdf/{}.trans".format(robot_name)  # the name of urdf file
     with open(file_name, mode="w") as f:
         f.write('<?xml version="1.0" ?>\n')
         f.write(
@@ -164,7 +153,7 @@ def write_transmissions_xacro(joints: list[Joint], robot_name, save_dir):
         )
         f.write("\n")
 
-        for j in joints:
+        for j_name, j in joints.items():
             if j.type != "fixed":
                 tran_xml = j.make_transmission_xml()
                 f.write(tran_xml)
@@ -173,15 +162,12 @@ def write_transmissions_xacro(joints: list[Joint], robot_name, save_dir):
         f.write("</robot>\n")
 
 
-def write_gazebo_xacro(joints: list[Joint], robot_name, save_dir):
-    try:
-        os.mkdir(save_dir + "/urdf")
-    except FileExistsError:
-        pass
+def write_gazebo_xacro(urdf_infos: dict[str, Any]):
+    robot_name = urdf_infos["robot_name"]
+    urdf_dir = urdf_infos["urdf_dir"]
+    joints: dict[str, Joint] = urdf_infos["joints"]
+    file_name = os.path.join(urdf_dir, f"{robot_name}.gazebo")  # the name of urdf file
 
-    file_name = save_dir + "/urdf/" + robot_name + ".gazebo"  # the name of urdf file
-    repo = robot_name + "/meshes/"  # the repository of binary stl files
-    # repo = package_name + '/' + robot_name + '/bin_stl/'  # the repository of binary stl files
     with open(file_name, mode="w") as f:
         f.write('<?xml version="1.0" ?>\n')
         f.write(
@@ -210,9 +196,8 @@ def write_gazebo_xacro(joints: list[Joint], robot_name, save_dir):
         f.write("\n")
 
         # others
-        for joint in joints:
-            name = joint.child
-            f.write('<gazebo reference="{}">\n'.format(name))
+        for joint_name, joint in joints.items():
+            f.write('<gazebo reference="{}">\n'.format(joint.child))
             f.write("  <material>${body_color}</material>\n")
             f.write("  <mu1>0.2</mu1>\n")
             f.write("  <mu2>0.2</mu2>\n")
@@ -223,7 +208,7 @@ def write_gazebo_xacro(joints: list[Joint], robot_name, save_dir):
         f.write("</robot>\n")
 
 
-def write_display_launch(package_name, robot_name, save_dir):
+def write_display_launch(urdf_infos: dict[str, Any]):
     """
     write display launch file "save_dir/launch/display.launch"
 
@@ -235,17 +220,16 @@ def write_display_launch(package_name, robot_name, save_dir):
     save_dir: str
     path of the repository to save
     """
-    try:
-        os.mkdir(save_dir + "/launch")
-    except FileExistsError:
-        pass
-
+    package_name = urdf_infos["package_name"]
+    robot_name = urdf_infos["robot_name"]
+    launch_dir = urdf_infos["launch_dir"]
+    
     launch = Element("launch")
 
     arg1 = SubElement(launch, "arg")
     arg1.attrib = {
         "name": "model",
-        "default": "$(find {})/urdf/{}.xacro".format(package_name, robot_name),
+        "default": f"$(find {package_name})/urdf/{robot_name}.xacro",
     }
 
     arg2 = SubElement(launch, "arg")
@@ -254,7 +238,7 @@ def write_display_launch(package_name, robot_name, save_dir):
     arg3 = SubElement(launch, "arg")
     arg3.attrib = {
         "name": "rvizconfig",
-        "default": "$(find {})/launch/urdf.rviz".format(package_name),
+        "default": f"$(find {package_name})/launch/urdf.rviz",
     }
 
     param1 = SubElement(launch, "param")
@@ -291,12 +275,12 @@ def write_display_launch(package_name, robot_name, save_dir):
 
     launch_xml = "\n".join(utils.prettify(launch).split("\n")[1:])
 
-    file_name = save_dir + "/launch/display.launch"
+    file_name = f"{launch_dir}/display.launch"
     with open(file_name, mode="w") as f:
         f.write(launch_xml)
 
 
-def write_gazebo_launch(package_name, robot_name, save_dir):
+def write_gazebo_launch(urdf_infos: dict[str, Any]):
     """
     write gazebo launch file "save_dir/launch/gazebo.launch"
 
@@ -308,19 +292,15 @@ def write_gazebo_launch(package_name, robot_name, save_dir):
     save_dir: str
         path of the repository to save
     """
-
-    try:
-        os.mkdir(save_dir + "/launch")
-    except FileExistsError:
-        pass
+    package_name = urdf_infos["package_name"]
+    robot_name = urdf_infos["robot_name"]
+    launch_dir = urdf_infos["launch_dir"]
 
     launch = Element("launch")
     param = SubElement(launch, "param")
     param.attrib = {
         "name": "robot_description",
-        "command": "$(find xacro)/xacro $(find {})/urdf/{}.xacro".format(
-            package_name, robot_name
-        ),
+        "command": f"$(find xacro)/xacro $(find {package_name})/urdf/{robot_name}.xacro",
     }
 
     node = SubElement(launch, "node")
@@ -328,7 +308,7 @@ def write_gazebo_launch(package_name, robot_name, save_dir):
         "name": "spawn_urdf",
         "pkg": "gazebo_ros",
         "type": "spawn_model",
-        "args": "-param robot_description -urdf -model {}".format(robot_name),
+        "args": f"-param robot_description -urdf -model {robot_name}",
     }
 
     include_ = SubElement(launch, "include")
@@ -353,12 +333,12 @@ def write_gazebo_launch(package_name, robot_name, save_dir):
 
     launch_xml = "\n".join(utils.prettify(launch).split("\n")[1:])
 
-    file_name = save_dir + "/launch/" + "gazebo.launch"
+    file_name = f"{launch_dir}/gazebo.launch"
     with open(file_name, mode="w") as f:
         f.write(launch_xml)
 
 
-def write_control_launch(package_name, robot_name, save_dir, joints: list[Joint]):
+def write_control_launch(urdf_infos: dict[str, Any]):
     """
     write control launch file "save_dir/launch/controller.launch"
 
@@ -372,35 +352,32 @@ def write_control_launch(package_name, robot_name, save_dir, joints: list[Joint]
     joints_dict: dict
         information of the joints
     """
+    package_name = urdf_infos["package_name"]
+    robot_name = urdf_infos["robot_name"]
+    joints: dict[str, Joint] = urdf_infos["joints"]
+    launch_dir = urdf_infos["launch_dir"]
 
-    try:
-        os.mkdir(save_dir + "/launch")
-    except FileExistsError:
-        pass
-
-    # launch = Element('launch')
-
-    controller_name = robot_name + "_controller"
+    controller_name = f"{robot_name}_controller"
     # rosparam = SubElement(launch, 'rosparam')
     # rosparam.attrib = {'file':'$(find {})/launch/controller.yaml'.format(package_name),
     #                   'command':'load'}
 
     controller_args_str = ""
-    for j in joints:
+    for j_name, j in joints.items():
         joint_type = j.type
         if joint_type != "fixed":
-            controller_args_str += j.name + "_position_controller "
+            controller_args_str += f"{j.name}_position_controller "
     controller_args_str += "joint_state_controller "
 
     node_controller = Element("node")
-    node_controller.attrib = {
+    node_controller.attrib = {  
         "name": "controller_spawner",
         "pkg": "controller_manager",
         "type": "spawner",
         "respawn": "false",
         "output": "screen",
         "ns": robot_name,
-        "args": "{}".format(controller_args_str),
+        "args": f"{controller_args_str}",
     }
 
     node_publisher = Element("node")
@@ -412,21 +389,19 @@ def write_control_launch(package_name, robot_name, save_dir, joints: list[Joint]
         "output": "screen",
     }
     remap = SubElement(node_publisher, "remap")
-    remap.attrib = {"from": "/joint_states", "to": "/" + robot_name + "/joint_states"}
+    remap.attrib = {"from": "/joint_states", "to": f"/{robot_name}/joint_states"}
 
     # launch_xml  = "\n".join(utils.prettify(launch).split("\n")[1:])
     launch_xml = "\n".join(utils.prettify(node_controller).split("\n")[1:])
     launch_xml += "\n".join(utils.prettify(node_publisher).split("\n")[1:])
 
-    file_name = save_dir + "/launch/controller.launch"
+    file_name = f"{launch_dir}/controller.launch"
     with open(file_name, mode="w") as f:
         f.write("<launch>\n")
         f.write("\n")
         # for some reason ROS is very picky about the attribute ordering, so we'll bitbang this element
         f.write(
-            '<rosparam file="$(find {})/launch/controller.yaml" command="load"/>'.format(
-                package_name
-            )
+            f'<rosparam file="$(find {package_name})/launch/controller.yaml" command="load"/>'
         )
         f.write("\n")
         f.write(launch_xml)
@@ -434,7 +409,7 @@ def write_control_launch(package_name, robot_name, save_dir, joints: list[Joint]
         f.write("</launch>")
 
 
-def write_yaml(joints: list[Joint], robot_name, save_dir):
+def write_yaml(urdf_infos: dict[str, Any]):
     """
     write yaml file "save_dir/launch/controller.yaml"
 
@@ -448,15 +423,14 @@ def write_yaml(joints: list[Joint], robot_name, save_dir):
     joints_dict: dict
         information of the joints
     """
-    try:
-        os.mkdir(save_dir + "/launch")
-    except Exception:
-        pass
+    robot_name = urdf_infos["robot_name"]
+    joints: dict[str, Joint] = urdf_infos["joints"]
+    launch_dir = urdf_infos["launch_dir"]
 
-    controller_name = robot_name + "_controller"
-    file_name = save_dir + "/launch/controller.yaml"
+    controller_name = f"{robot_name}_controller"
+    file_name = f"{launch_dir}/controller.yaml"
     with open(file_name, "w") as f:
-        f.write(controller_name + ":\n")
+        f.write(f"{controller_name}:\n")
         # joint_state_controller
         f.write("  # Publish all joint states -----------------------------------\n")
         f.write("  joint_state_controller:\n")
@@ -464,10 +438,10 @@ def write_yaml(joints: list[Joint], robot_name, save_dir):
         f.write("    publish_rate: 50\n\n")
         # position_controllers
         f.write("  # Position Controllers --------------------------------------\n")
-        for joint in joints:
+        for joint_name, joint in joints.items():
             joint_type = joint.type
             if joint_type != "fixed":
-                f.write("  " + joint.name + "_position_controller:\n")
-                f.write("    type: effort_controllers/JointPositionController\n")
-                f.write("    joint: " + joint.name + "\n")
-                f.write("    pid: {p: 100.0, i: 0.01, d: 10.0}\n")
+                f.write(f"  {joint.name}_position_controller:\n")
+                f.write(f"    type: effort_controllers/JointPositionController\n")
+                f.write(f"    joint: {joint.name}\n")
+                f.write(f"    pid: {{p: 100.0, i: 0.01, d: 10.0}}\n")

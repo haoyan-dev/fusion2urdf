@@ -1,6 +1,7 @@
 # Author-syuntoku14
 # Description-Generate URDF file from Fusion 360
 
+from typing import Any
 import adsk
 import adsk.core
 import adsk.fusion
@@ -80,29 +81,41 @@ def run(context):
         home = os.path.expanduser("~")
         download_dir = os.path.join(home, "Downloads")
         save_dir = os.path.join(download_dir, "assets")
-        package_dir = os.path.join(save_dir, "robot_v1_description")
+        robot_name = root.name.split()[0]
+        package_name = robot_name + "_description"
+        package_dir = os.path.join(save_dir, package_name)
+        urdf_dir = os.path.join(package_dir, "urdf")
+        meshes_dir = os.path.join(package_dir, "meshes")
+        launch_dir = os.path.join(package_dir, "launch")
+        package_template_dir = os.path.abspath(
+            os.path.dirname(__file__) + "/package/"
+        )
+
+        urdf_infos: dict[str, Any] = {
+            "robot_name": robot_name,
+            "package_name": package_name,
+            "package_dir": package_dir,
+            "package_template_dir": package_template_dir,
+            "urdf_dir": urdf_dir,
+            "meshes_dir": meshes_dir,
+            "launch_dir": launch_dir,
+            "repo": f"package://{package_name}/",
+        }
 
         # create package directory
-        try:
-            os.makedirs(package_dir, exist_ok=True)
-        except Exception as e:
-            print(f"Failed to create directory: {package_dir}. Error: {e}")
+        if not os.path.exists(package_dir):
+            os.makedirs(package_dir)
 
         # create urdf directory
-        try:
-            os.makedirs(os.path.join(package_dir, "urdf"), exist_ok=True)
-        except Exception as e:
-            print(
-                f"Failed to create directory: {os.path.join(package_dir, 'urdf')}. Error: {e}"
-            )
-
+        if not os.path.exists(os.path.join(package_dir, "urdf")):
+            os.makedirs(os.path.join(package_dir, "urdf"))
+    
         # create meshes directory
-        try:
-            os.makedirs(os.path.join(package_dir, "meshes"), exist_ok=True)
-        except Exception as e:
-            print(
-                f"Failed to create directory: {os.path.join(package_dir, 'meshes')}. Error: {e}"
-            )
+        if not os.path.exists(os.path.join(package_dir, "meshes")):
+            os.makedirs(os.path.join(package_dir, "meshes"))
+        # create launch directory
+        if not os.path.exists(os.path.join(package_dir, "launch")):
+            os.makedirs(os.path.join(package_dir, "launch"))
 
         # Check all occurrences
         all_occurrences = root.allOccurrences
@@ -127,18 +140,32 @@ def run(context):
 
         # Check joints
         joints, links, success, msg = make_joints(
-            root, "package://robot_v1_description/"
+            root, urdf_infos
         )
+
+        urdf_infos["joints"] = joints
+        urdf_infos["links"] = links
 
         # save_dir = utils.file_dialog(ui)
         # if not save_dir:
         #     ui.messageBox("Fusion2URDF was canceled", title)
         #     return 0
-        write_urdf(joints, links, "robot_v1_description", "robot_v1", save_dir)
+        write_urdf(urdf_infos)
+        write_materials_xacro(urdf_infos)
+        write_transmissions_xacro(urdf_infos)
+        write_gazebo_xacro(urdf_infos)
+        write_display_launch(urdf_infos)
+        write_gazebo_launch(urdf_infos)
+        write_control_launch(urdf_infos)
+        write_yaml(urdf_infos)
 
-        utils.export_stl(design, package_dir, all_occurrences)
+        # copy over package files
+        utils.copy_package(urdf_infos)
+        utils.update_cmakelists(urdf_infos)
+        utils.update_package_xml(urdf_infos)
+        utils.export_stl(design, urdf_infos)
 
-        print("Completed STL export to: " + package_dir)
+        print("Completed STL export to: " + urdf_infos["package_dir"])
 
         return 0
         # --------------------

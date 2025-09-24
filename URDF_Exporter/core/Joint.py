@@ -138,7 +138,7 @@ class JointTypes(Enum):
 
 def make_joints(
     root: adsk.fusion.Component,
-    repo: str,
+    urdf_infos: dict[str, Any],
 ) -> Tuple[dict[str, Joint], dict[str, Link], bool, str]:
     """
     Collect all the joints in the design and make Joint instances for each joint
@@ -174,10 +174,12 @@ def make_joints(
     The name of the transmission is the name of the joint + "_tran".
     """
     all_occurrences: adsk.fusion.OccurrenceList = root.allOccurrences
-    all_joints: adsk.fusion.Joints = root.allJoints
+    all_joints: list[adsk.fusion.Joint] = root.allJoints
 
     joints: dict[str, Joint] = {}
     links: dict[str, Link] = {}
+
+    repo = urdf_infos["repo"]
 
     def make_link(occ: adsk.fusion.Occurrence, repo: str) -> Link:
         prop = occ.getPhysicalProperties(
@@ -232,14 +234,6 @@ def make_joints(
                 + " is not set its joint origin. Please set it and try again."
             )
             return {}, {}, False, msg
-
-        child_link = links[child_occ.name]
-        # set offset from the origin of the child link to the joint origin
-        oMj = Transform.from_Matrix3D(child_joint_origin.transform)
-        oMl = Transform.from_Matrix3D(child_occ.transform2)
-        child_link.offset = oMl.inverse() * oMj
-
-
 
         motion: Any = fusion_joint.jointMotion
         fusion_joint_type = motion.jointType
