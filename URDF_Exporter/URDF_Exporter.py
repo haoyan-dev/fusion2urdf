@@ -23,12 +23,10 @@ from .core import (
 )
 from .utils import (
     UrdfInfo,
-    copy_package,
+    create_package,
     export_stl,
     file_dialog,
     make_package_structure,
-    update_cmakelists,
-    update_package_xml,
 )
 
 """
@@ -61,6 +59,14 @@ def run(context):
             return
 
         root = design.rootComponent  # root component
+
+        # Popup a dialog to let user specify ros/ros2 package
+        package_type, cancelled = ui.inputBox(
+            "Enter package type (ros or ros2):", "Package Type", "ros2"
+        )
+        if package_type not in ["ros", "ros2"]:
+            ui.messageBox("Invalid package type. Please enter 'ros' or 'ros2'.", title)
+            return
 
         # --------------------
         # get user's download folder by default
@@ -115,9 +121,7 @@ def run(context):
         write_yaml(urdf_infos)
 
         # copy over package files
-        copy_package(urdf_infos)
-        update_cmakelists(urdf_infos)
-        update_package_xml(urdf_infos)
+        create_package(urdf_infos, package_type)
         export_stl(design, urdf_infos)
 
         ui.messageBox(msg, title)

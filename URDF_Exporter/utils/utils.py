@@ -18,7 +18,7 @@ import os.path
 import re
 import shutil
 import sys
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
 from xml.dom import minidom
 from xml.etree import ElementTree
 
@@ -154,7 +154,7 @@ def export_stl(
             # create stl exportOptions
             stlExportOptions = exportMgr.createSTLExportOptions(occ.component, fileName)
             stlExportOptions.sendToPrintUtility = False
-            stlExportOptions.isBinaryFormat = False
+            stlExportOptions.isBinaryFormat = True
             # options are .MeshRefinementLow .MeshRefinementMedium .MeshRefinementHigh
             stlExportOptions.meshRefinement = (
                 adsk.fusion.MeshRefinementSettings.MeshRefinementLow  # type: ignore
@@ -239,7 +239,117 @@ def prettify(elem: ElementTree.Element) -> str:
     return reparsed.toprettyxml(indent="  ")
 
 
-def copy_package(urdf_infos: UrdfInfo) -> None:
+def create_package(urdf_infos: UrdfInfo, type: str = "ros2") -> None:
+    """Create and set up a ROS or ROS 2 package for URDF files.
+
+    Depending on the specified type ("ros" or "ros2"), this function creates
+    the appropriate package structure, copies template files, and updates
+    configuration files with the correct package name.
+
+    Args:
+        urdf_infos: Dictionary containing package_name and package_dir
+        type: Type of ROS package to create ("ros" or "ros2")
+
+    Raises:
+        ValueError: If an unsupported package type is specified
+
+    Note:
+        - For "ros", uses catkin package templates.
+        - For "ros2", uses ament package templates.
+        - Updates CMakeLists.txt, package.xml, and setup.py as needed.
+    """
+    if type == "ros":
+        create_ros_package(urdf_infos)
+        update_ros_package(urdf_infos)
+    elif type == "ros2":
+        create_ros2_package(urdf_infos)
+        update_ros2_package(urdf_infos)
+    else:
+        raise ValueError("Unsupported package type. Use 'ros' or 'ros2'.")
+
+
+def create_ros2_package(urdf_infos: UrdfInfo) -> None:
+    """Create a new ROS 2 package directory structure.
+
+    Args:
+        urdf_infos: Dictionary containing package_name and package_dir
+
+    This function sets up the basic directory structure for a ROS 2 package
+    based on the provided URDF information.
+    """
+    package_dir = urdf_infos["package_dir"]
+    package_name = urdf_infos["package_name"]
+    package_template_dir = os.path.abspath(
+        os.path.join(__file__, "../../templates/ros2_urdf_package")
+    )
+
+    os.makedirs(package_dir, exist_ok=True)
+
+    # Create subdirectories for launch, urdf, meshes, and config
+    os.makedirs(os.path.join(package_dir, "launch"), exist_ok=True)
+    os.makedirs(os.path.join(package_dir, "urdf"), exist_ok=True)
+    os.makedirs(os.path.join(package_dir, "meshes"), exist_ok=True)
+    os.makedirs(os.path.join(package_dir, "config"), exist_ok=True)
+    os.makedirs(os.path.join(package_dir, "test"), exist_ok=True)
+
+    os.makedirs(os.path.join(package_dir, package_name), exist_ok=True)
+    with open(os.path.join(package_dir, package_name, "__init__.py"), "w"):
+        pass
+
+    os.makedirs(os.path.join(package_dir, "resource"), exist_ok=True)
+    with open(os.path.join(package_dir, "resource", package_name), "w"):
+        pass
+
+    # Copy template files
+    shutil.copytree(package_template_dir, package_dir, dirs_exist_ok=True)
+
+
+def update_ros2_package(urdf_infos: UrdfInfo) -> None:
+    """Update ROS 2 package files with the correct package name.
+
+    Args:
+        urdf_infos: Dictionary containing package_name and package_dir
+
+    This function modifies the CMakeLists.txt and package.xml files in the
+    ROS 2 package to replace template values with the actual package name.
+    """
+
+    # Update setup.py
+    file_name = os.path.join(urdf_infos["package_dir"], "setup.py")
+
+    for line in fileinput.input(file_name, inplace=True):
+        if "project(fusion2urdf)" in line:
+            sys.stdout.write(f'package_name = "{urdf_infos["package_name"]}"\n')
+        else:
+            sys.stdout.write(line)
+
+    # Update package.xml
+    file_name = os.path.join(urdf_infos["package_dir"], "package.xml")
+
+    for line in fileinput.input(file_name, inplace=True):
+        if "<name>" in line:
+            sys.stdout.write(f"  <name>{urdf_infos['package_name']}</name>\n")
+        elif "<description>" in line:
+            sys.stdout.write(
+                f"<description>The {urdf_infos['package_name']} ROS 2 package</description>\n"
+            )
+        else:
+            sys.stdout.write(line)
+
+    # Update setup.cfg
+    file_name = os.path.join(urdf_infos["package_dir"], "setup.cfg")
+    for line in fileinput.input(file_name, inplace=True):
+        if "script-dir" in line:
+            sys.stdout.write(f"script-dir=$base/lib/{urdf_infos['package_name']}\n")
+        elif "install-scripts" in line:
+            sys.stdout.write(
+                f"install-scripts=$base/lib/{urdf_infos['package_name']}\n"
+            )
+        else:
+            sys.stdout.write(line)
+
+
+def create_ros_package(urdf_infos: UrdfInfo) -> None:
     """Copy ROS package template files to the target package directory.
 
     Copies all files from the package template directory to create the basic
@@ -253,26 +363,29 @@ def copy_package(urdf_infos: UrdfInfo) -> None:
         Template files will be customized later by update functions.
     """
     package_dir = urdf_infos["package_dir"]
-    package_template_dir = urdf_infos["package_template_dir"]
+    package_template_dir = os.path.abspath(
+        os.path.join(__file__, "../../templates/ros_urdf_package")
+    )
 
     shutil.copytree(
         package_template_dir, package_dir, dirs_exist_ok=True
     )  # dirs_exist_ok=True allows overwriting
 
 
-def update_cmakelists(urdf_infos: UrdfInfo) -> None:
-    """Update CMakeLists.txt with the correct package name.
+def update_ros_package(urdf_infos: UrdfInfo) -> None:
+    """Update ROS package files with the correct package name.
 
-    Modifies the CMakeLists.txt file in the package directory to replace
-    the template project name with the actual package name.
+    Modifies the CMakeLists.txt and package.xml files in the ROS package
+    to replace template values with the actual package name.
 
     Args:
         urdf_infos: Dictionary containing package_name and package_dir
 
     Note:
-        Performs in-place file editing to replace "project(fusion2urdf)"
-        with "project({package_name})".
+        Updates both the project name in CMakeLists.txt and the <name> tag
+        in package.xml. Performs in-place file editing.
     """
+    # Update CMakeLists.txt
     file_name = urdf_infos["package_dir"] + "/CMakeLists.txt"
 
     for line in fileinput.input(file_name, inplace=True):
@@ -281,20 +394,7 @@ def update_cmakelists(urdf_infos: UrdfInfo) -> None:
         else:
             sys.stdout.write(line)
 
-
-def update_package_xml(urdf_infos: UrdfInfo) -> None:
-    """Update package.xml with the correct package name and description.
-
-    Modifies the package.xml file to replace template values with the actual
-    package name and generates an appropriate description.
-
-    Args:
-        urdf_infos: Dictionary containing package_name and package_dir
-
-    Note:
-        Updates both the <name> tag and <description> tag with package-specific values.
-        Performs in-place file editing.
-    """
+    # Update package.xml
     file_name = urdf_infos["package_dir"] + "/package.xml"
 
     for line in fileinput.input(file_name, inplace=True):

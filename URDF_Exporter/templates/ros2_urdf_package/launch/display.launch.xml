@@ -1,0 +1,22 @@
+<?xml version='1.0' ?>
+
+<launch>
+    <arg name="description_file"
+         default="$(find-pkg-share dual_arm_base_description)/urdf/dual_arm_combined.xacro"
+         description="URDF/XACRO description file with the robot."/>
+
+    <arg name="rviz_config_file"
+         default="$(find-pkg-share dual_arm_base_description)/config/display.rviz"
+         description="RViz config file to use when launching rviz."/>
+
+    <let name="robot_description_content" value="$(command 'xacro $(var description_file)')" />
+
+    <node pkg="joint_state_publisher_gui" exec="joint_state_publisher_gui"/>
+
+    <node pkg="robot_state_publisher" exec="robot_state_publisher" output="both">
+        <param name="robot_description" value="$(var robot_description_content)" />
+    </node>
+
+    <node pkg="rviz2" exec="rviz2" name="rviz2" output="log" args="-d $(var rviz_config_file)"/>
+
+</launch>
