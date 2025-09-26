@@ -1,7 +1,7 @@
 # Author-syuntoku14
 # Description-Generate URDF file from Fusion 360
 
-import os
+from pathlib import Path
 import traceback
 
 # pyright: reportMissingImports=false
@@ -13,12 +13,11 @@ from .core import (
     make_joints,
     make_links,
     write_control_launch,
-    write_display_launch,
     write_gazebo_launch,
     write_gazebo_xacro,
     write_materials_xacro,
     write_transmissions_xacro,
-    write_urdf,
+    write_urdf_xacro,
     write_yaml,
 )
 from .utils import (
@@ -80,23 +79,43 @@ def run(context):
             return 0
 
         assert isinstance(save_dir, str)
+        save_dir = Path(save_dir)
 
         robot_name = root.name.split()[0]
         package_name = robot_name + "_description"
-        package_dir = os.path.join(save_dir, package_name)
-        urdf_dir = os.path.join(package_dir, "urdf")
-        meshes_dir = os.path.join(package_dir, "meshes")
-        launch_dir = os.path.join(package_dir, "launch")
-        package_template_dir = os.path.abspath(os.path.dirname(__file__) + "/package/")
+        package_dir = save_dir / package_name
+        urdf_dir = package_dir / "urdf"
+        meshes_dir = package_dir / "meshes"
+        launch_dir = package_dir / "launch"
+        package_template_dir = Path(__file__).resolve().parent / "package"
+
+        # check folder existence
+        if package_dir.exists():
+            result = ui.messageBox(
+                f"Folder '{package_dir}' already exists. Remove it and continue?",
+                title,
+                adsk.core.MessageBoxButtonTypes.YesNoButtonType,  # type: ignore
+                adsk.core.MessageBoxIconTypes.WarningIconType,  # type: ignore
+            )
+            if result == adsk.core.DialogResults.DialogNo:  # type: ignore
+                ui.messageBox("Fusion2URDF was canceled", title)
+                return 0
+            elif result == adsk.core.DialogResults.DialogYes:  # type: ignore
+                import shutil
+
+                shutil.rmtree(package_dir)
+                ui.messageBox(
+                    f"Removed '{package_dir}' folder, continue with export.", title
+                )
 
         urdf_infos: UrdfInfo = {
             "robot_name": robot_name,
             "package_name": package_name,
-            "package_dir": package_dir,
-            "package_template_dir": package_template_dir,
-            "urdf_dir": urdf_dir,
-            "meshes_dir": meshes_dir,
-            "launch_dir": launch_dir,
+            "package_dir": str(package_dir),
+            "package_template_dir": str(package_template_dir),
+            "urdf_dir": str(urdf_dir),
+            "meshes_dir": str(meshes_dir),
+            "launch_dir": str(launch_dir),
             "repo": f"package://{package_name}/",
             "joints": {},
             "links": {},
@@ -111,11 +130,11 @@ def run(context):
         urdf_infos["joints"] = make_joints(root)
 
         # write files
-        write_urdf(urdf_infos)
+        write_urdf_xacro(urdf_infos)
         write_materials_xacro(urdf_infos)
         write_transmissions_xacro(urdf_infos)
         write_gazebo_xacro(urdf_infos)
-        write_display_launch(urdf_infos)
+        # write_display_launch(urdf_infos)
         write_gazebo_launch(urdf_infos)
         write_control_launch(urdf_infos)
         write_yaml(urdf_infos)

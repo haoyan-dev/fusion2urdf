@@ -81,7 +81,7 @@ class Joint:
         self.xyz: list[float] = origin.translation
         self.rpy: list[float] = origin.rotation
 
-    def make_joint_xml(self) -> str:
+    def make_joint_xml(self) -> list[str]:
         """Generate URDF XML representation of the joint.
 
         Creates a complete URDF joint element with origin, parent/child links,
@@ -89,7 +89,7 @@ class Joint:
         The generated XML is stored in self.joint_xml and returned.
 
         Returns:
-            str: Complete URDF XML string for the joint
+            list[str]: Complete URDF XML string for the joint
 
         Note:
             The XML includes effort and velocity limits set to default values of 100.
@@ -125,11 +125,12 @@ class Joint:
             # fixed joint does not have axis and limit
             pass
 
-        self.joint_xml = "\n".join(utils.prettify(joint).split("\n")[1:])
+        lines = utils.prettify(joint).split("\n")[1:]
+        self.joint_xml = "\n".join(lines)
 
-        return self.joint_xml
+        return lines
 
-    def make_transmission_xml(self) -> str:
+    def make_transmission_xml(self) -> list[str]:
         """Generate URDF XML representation of the joint transmission.
 
         Creates a transmission element for use with ros_control, defining the
@@ -137,7 +138,7 @@ class Joint:
         with EffortJointInterface and a mechanical reduction of 1:1.
 
         Returns:
-            str: Complete URDF XML string for the transmission
+            list[str]: Complete URDF XML string for the transmission
 
         Note:
             - Transmission type: transmission_interface/SimpleTransmission
@@ -163,9 +164,10 @@ class Joint:
         mechanicalReduction = SubElement(actuator, "mechanicalReduction")
         mechanicalReduction.text = "1"
 
-        self.tran_xml = "\n".join(utils.prettify(tran).split("\n")[1:])
+        lines = utils.prettify(tran).split("\n")[1:]
+        self.tran_xml = "\n".join(lines)
 
-        return self.tran_xml
+        return lines
 
 
 class JointTypes(Enum):

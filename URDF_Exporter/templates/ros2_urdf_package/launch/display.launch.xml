@@ -2,7 +2,7 @@
 
 <launch>
     <arg name="description_file"
-         default="$(find-pkg-share dual_arm_base_description)/urdf/dual_arm_combined.xacro"
+         default="$(find-pkg-share dual_arm_base_description)/urdf/${robot_name}.urdf.xacro"
          description="URDF/XACRO description file with the robot."/>
 
     <arg name="rviz_config_file"

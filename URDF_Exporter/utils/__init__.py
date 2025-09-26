@@ -16,6 +16,7 @@ from .utils import (
     make_package_structure,
     create_package,
     prettify,
+    prettify_xml_str,
     origin2center_of_mass,
     UrdfInfo,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "make_package_structure",
     "create_package",
     "prettify",
+    "prettify_xml_str",
     "origin2center_of_mass",
     "UrdfInfo",
 ]

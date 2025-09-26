@@ -72,7 +72,7 @@ class Link:
         )
         self.joMl: Transform = self.lMjo.inverse()
 
-    def make_link_xml(self) -> str:
+    def make_link_xml(self) -> list[str]:
         """Generate URDF XML representation of the link.
 
         Creates a complete URDF link element including:
@@ -84,7 +84,7 @@ class Link:
         the joint origin and link origin using the joMl transformation.
 
         Returns:
-            str: Complete URDF XML string for the link
+            list[str]: Complete URDF XML string for the link
 
         Note:
             STL meshes are scaled by 0.001 (assuming Fusion 360 export is in mm,
@@ -98,19 +98,19 @@ class Link:
         inertial = SubElement(link, "inertial")
         origin_i = SubElement(inertial, "origin")
         origin_i.attrib = {
-            "xyz": " ".join([str(_) for _ in self.center_of_mass]),
+            "xyz": " ".join([f"{round(el, 6)}" for el in self.center_of_mass]),
             "rpy": "0 0 0",
         }
         mass = SubElement(inertial, "mass")
-        mass.attrib = {"value": str(self.mass)}
+        mass.attrib = {"value": f"{round(self.mass, 6)}"}
         inertia = SubElement(inertial, "inertia")
         inertia.attrib = {
-            "ixx": str(self.inertia_tensor[0]),
-            "iyy": str(self.inertia_tensor[1]),
-            "izz": str(self.inertia_tensor[2]),
-            "ixy": str(self.inertia_tensor[3]),
-            "iyz": str(self.inertia_tensor[4]),
-            "ixz": str(self.inertia_tensor[5]),
+            "ixx": f"{round(self.inertia_tensor[0], 6)}",
+            "iyy": f"{round(self.inertia_tensor[1], 6)}",
+            "izz": f"{round(self.inertia_tensor[2], 6)}",
+            "ixy": f"{round(self.inertia_tensor[3], 6)}",
+            "iyz": f"{round(self.inertia_tensor[4], 6)}",
+            "ixz": f"{round(self.inertia_tensor[5], 6)}",
         }
 
         # STL file has no unit. We assume the export from Fusion 360 is in meters.
@@ -120,8 +120,8 @@ class Link:
         origin_v = SubElement(visual, "origin")
         # The urdf origin is at the joint origin, so use self.joMl to fix the visual and collision offset when there is an offset between the joint origin and the link origin.
         origin_v.attrib = {
-            "xyz": " ".join([str(round(el, 6)) for el in self.joMl.translation]),
-            "rpy": " ".join([str(round(el, 6)) for el in self.joMl.rotation]),
+            "xyz": " ".join([f"{round(el, 6)}" for el in self.joMl.translation]),
+            "rpy": " ".join([f"{round(el, 6)}" for el in self.joMl.rotation]),
         }
         geometry_v = SubElement(visual, "geometry")
         mesh_v = SubElement(geometry_v, "mesh")
@@ -136,8 +136,8 @@ class Link:
         collision = SubElement(link, "collision")
         origin_c = SubElement(collision, "origin")
         origin_c.attrib = {
-            "xyz": " ".join([str(round(el, 6)) for el in self.joMl.translation]),
-            "rpy": " ".join([str(round(el, 6)) for el in self.joMl.rotation]),
+            "xyz": " ".join([f"{round(el, 6)}" for el in self.joMl.translation]),
+            "rpy": " ".join([f"{round(el, 6)}" for el in self.joMl.rotation]),
         }
         # origin_c.attrib = {"xyz": " ".join([str(_) for _ in self.xyz]), "rpy": "0 0 0"}
         geometry_c = SubElement(collision, "geometry")
@@ -148,9 +148,9 @@ class Link:
         }
 
         # print("\n".join(utils.prettify(link).split("\n")[1:]))
-        self.link_xml = "\n".join(prettify(link).split("\n")[1:])
-
-        return self.link_xml
+        lines = prettify(link).split("\n")[1:]
+        self.link_xml = "\n".join(lines)
+        return lines
 
 
 def make_links(root: adsk.fusion.Component, urdf_infos: UrdfInfo) -> dict[str, Link]:

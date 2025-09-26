@@ -1,7 +1,7 @@
 from .Link import Link, make_links
 from .Joint import Joint, make_joints
 from .Write import (
-    write_urdf,
+    write_urdf_xacro,
     write_materials_xacro,
     write_transmissions_xacro,
     write_gazebo_xacro,
@@ -15,7 +15,7 @@ __all__ = [
     "Link",
     "Joint",
     "make_joints",
-    "write_urdf",
+    "write_urdf_xacro",
     "make_links",
     "write_materials_xacro",
     "write_transmissions_xacro",

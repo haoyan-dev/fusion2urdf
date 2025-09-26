@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 import os
 from glob import glob
 
-package_name = "project(fusion2urdf)"
+package_name = "${package_name}"
 
 setup(
     name=package_name,
@@ -20,7 +20,7 @@ setup(
     zip_safe=True,
     maintainer="root",
     maintainer_email="root@todo.todo",
-    description="TODO: Package description",
+    description=f"The {package_name} package",
     license="MIT",
     tests_require=["pytest"],
     entry_points={

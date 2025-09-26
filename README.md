@@ -6,6 +6,9 @@ A Fusion 360 add-in that exports 3D models to URDF (Unified Robot Description Fo
 
 This project is forked and enhanced from the original [fusion2urdf by syuntoku14](https://github.com/syuntoku14/fusion2urdf). The original work provided the foundation for exporting Fusion 360 models to URDF format. This version includes improvements, bug fixes, and additional features for better ROS integration.
 
+## Fusion Version
+Fusion 2604.1.25
+
 ## ✨ Features
 
 - **Complete URDF Export**: Generate comprehensive URDF files with links, joints, and material properties

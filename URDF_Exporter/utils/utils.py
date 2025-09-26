@@ -11,6 +11,7 @@ This module provides various utility functions for:
 
 Created on Sun May 12 19:15:34 2019
 @author: syuntoku
+@editor: haoyan.li
 """
 
 import fileinput
@@ -18,7 +19,7 @@ import os.path
 import re
 import shutil
 import sys
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 from xml.dom import minidom
 from xml.etree import ElementTree
 
@@ -239,6 +240,29 @@ def prettify(elem: ElementTree.Element) -> str:
     return reparsed.toprettyxml(indent="  ")
 
 
+def prettify_xml_str(xml_str: str) -> str:
+    """Format XML string as pretty-printed string with proper indentation.
+
+    Converts an XML string to a nicely formatted string with consistent
+    indentation for better readability in generated URDF files.
+
+    Args:
+        xml_str: XML string to format
+
+    Returns:
+        str: Pretty-printed XML string with 2-space indentation
+
+    Note:
+        Uses UTF-8 encoding and 2-space indentation for consistency.
+    """
+    rough_string = xml_str.encode("utf-8")
+    reparsed = minidom.parseString(rough_string)
+    pretty_xml = reparsed.toprettyxml(indent="  ")
+
+    cleaned_xml = "\n".join([line for line in pretty_xml.split("\n") if line.strip()])
+    return cleaned_xml
+
+
 def create_package(urdf_infos: UrdfInfo, type: str = "ros2") -> None:
     """Create and set up a ROS or ROS 2 package for URDF files.
 
@@ -317,36 +341,60 @@ def update_ros2_package(urdf_infos: UrdfInfo) -> None:
     # Update setup.py
     file_name = os.path.join(urdf_infos["package_dir"], "setup.py")
 
-    for line in fileinput.input(file_name, inplace=True):
-        if "project(fusion2urdf)" in line:
-            sys.stdout.write(f'package_name = "{urdf_infos["package_name"]}"\n')
-        else:
-            sys.stdout.write(line)
+    with open(file_name, "r+") as f:
+        content = f.read()
+        content = re.sub(r"\${package_name}", f"{urdf_infos['package_name']}", content)
+        f.seek(0)
+        f.write(content)
 
     # Update package.xml
     file_name = os.path.join(urdf_infos["package_dir"], "package.xml")
 
-    for line in fileinput.input(file_name, inplace=True):
-        if "<name>" in line:
-            sys.stdout.write(f"  <name>{urdf_infos['package_name']}</name>\n")
-        elif "<description>" in line:
-            sys.stdout.write(
-                f"<description>The {urdf_infos['package_name']} ROS 2 package</description>\n"
+    with open(file_name, "r+") as f:
+        content = f.read()
+        f.seek(0)
+        f.write(
+            re.sub(
+                r"<name>.*</name>",
+                f"<name>{urdf_infos['package_name']}</name>",
+                re.sub(
+                    r"<description>.*</description>",
+                    f"<description>The {urdf_infos['package_name']} package</description>",
+                    content,
+                ),
             )
-        else:
-            sys.stdout.write(line)
+        )
 
     # Update setup.cfg
     file_name = os.path.join(urdf_infos["package_dir"], "setup.cfg")
-    for line in fileinput.input(file_name, inplace=True):
-        if "script-dir" in line:
-            sys.stdout.write(f"script-dir=$base/lib/{urdf_infos['package_name']}\n")
-        elif "install-scripts" in line:
-            sys.stdout.write(
-                f"install-scripts=$base/lib/{urdf_infos['package_name']}\n"
+    with open(file_name, "r+") as f:
+        content = f.read()
+        f.seek(0)
+        f.write(
+            re.sub(
+                r"script_dir=\$base/lib/\${package_name}",
+                f"script_dir=$base/lib/{urdf_infos['package_name']}",
+                re.sub(
+                    r"install_scripts=\$base/lib/\${package_name}",
+                    f"install_scripts=$base/lib/{urdf_infos['package_name']}",
+                    content,
+                ),
             )
-        else:
-            sys.stdout.write(line)
+        )
+
+    # Update launch file
+    file_name = os.path.join(urdf_infos["package_dir"], "launch", "display.launch.xml")
+
+    with open(file_name, "r+") as f:
+        content = f.read()
+        f.seek(0)
+        f.write(
+            re.sub(
+                r"\${robot_name}",
+                urdf_infos["robot_name"],
+                content,
+            )
+        )
 
 
 def create_ros_package(urdf_infos: UrdfInfo) -> None:

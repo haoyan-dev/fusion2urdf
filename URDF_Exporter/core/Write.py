@@ -3,7 +3,7 @@
 Created on Sun May 12 20:46:26 2019
 
 @author: syuntoku
-@modified by: haoyan.li
+@editor: haoyan.li
 """
 
 import os
@@ -11,10 +11,10 @@ from xml.etree.ElementTree import Element, SubElement
 
 from ..core import Joint, Link
 from ..utils import utils
-from ..utils.utils import UrdfInfo
+from ..utils.utils import prettify_xml_str, UrdfInfo
 
 
-def write_link_urdf(file_name: str, links: dict[str, Link]) -> None:
+def write_link_urdf(links: dict[str, Link]) -> list[str]:
     """Write link definitions to a URDF file.
 
     Appends URDF XML representations of all provided links to the specified file.
@@ -27,14 +27,14 @@ def write_link_urdf(file_name: str, links: dict[str, Link]) -> None:
     Note:
         File must already exist and be opened in append mode.
     """
-    with open(file_name, mode="a") as f:
-        for link_name, link in links.items():
-            link_xml = link.make_link_xml()
-            f.write(link_xml)
-            f.write("\n")
+    lines = []
+    for link in links.values():
+        lines.extend(link.make_link_xml())
+
+    return lines
 
 
-def write_joint_urdf(file_name: str, joints: dict[str, Joint]) -> None:
+def write_joint_urdf(joints: dict[str, Joint]) -> list[str]:
     """Write joint and transmission definitions to a URDF file.
 
     Appends URDF XML representations of all provided joints and their
@@ -48,17 +48,14 @@ def write_joint_urdf(file_name: str, joints: dict[str, Joint]) -> None:
     Note:
         File must already exist and be opened in append mode.
     """
-    with open(file_name, mode="a") as f:
-        for joint_name, joint in joints.items():
-            transmission_xml = joint.make_transmission_xml()
-            joint_xml = joint.make_joint_xml()
-            f.write(transmission_xml)
-            f.write("\n")
-            f.write(joint_xml)
-            f.write("\n")
+    lines = []
+    for joint in joints.values():
+        lines.extend(joint.make_joint_xml())
+
+    return lines
 
 
-def write_gazebo_endtag(file_name: str) -> None:
+def write_endtag(robot_name: str) -> list[str]:
     """Write the closing robot tag to complete the URDF file.
 
     Appends the closing </robot> tag to properly terminate the URDF XML structure.
@@ -66,12 +63,10 @@ def write_gazebo_endtag(file_name: str) -> None:
     Args:
         file_name: Full path to the URDF file to append to
     """
-    with open(file_name, mode="a") as f:
-        f.write("</xacro:macro>\n")
-        f.write("</robot>\n")
+    return ["</xacro:macro>\n", f"<!-- <xacro:{robot_name} /> -->\n", "</robot>\n"]
 
 
-def write_urdf(urdf_infos: UrdfInfo) -> None:
+def write_urdf_xacro(urdf_infos: UrdfInfo) -> None:
     """Generate the main URDF XACRO file with includes and robot definition.
 
     Creates the primary XACRO file that includes material definitions, transmissions,
@@ -94,35 +89,25 @@ def write_urdf(urdf_infos: UrdfInfo) -> None:
     joints: dict[str, Joint] = urdf_infos["joints"]
     links: dict[str, Link] = urdf_infos["links"]
 
-    file_name = os.path.join(urdf_dir, f"{robot_name}.xacro")
+    file_name = os.path.join(urdf_dir, f"{robot_name}.urdf.xacro")
+
+    lines = [
+        f'<?xml version="1.0" ?>',
+        f'<robot name="{robot_name}" xmlns:xacro="http://www.ros.org/wiki/xacro">',
+        f'<xacro:macro name="{robot_name}" params="">',
+        f'<xacro:include filename="$(find {package_name})/urdf/materials.xacro" />',
+        f'<xacro:include filename="$(find {package_name})/urdf/{robot_name}.trans" />',
+        f'<xacro:include filename="$(find {package_name})/urdf/{robot_name}.gazebo" />',
+    ]
+
+    lines.extend(write_link_urdf(links))
+    lines.extend(write_joint_urdf(joints))
+    lines.extend(write_endtag(robot_name))
 
     with open(file_name, mode="w") as f:
-        f.write('<?xml version="1.0" ?>\n')
-        f.write(
-            '<robot name="{}" xmlns:xacro="http://www.ros.org/wiki/xacro">\n'.format(
-                robot_name
-            )
-        )
-        f.write("\n")
-        f.write(f'<xacro:macro name="{robot_name}" params="">')
-        f.write("\n")
-        f.write(
-            f'<xacro:include filename="$(find {package_name})/urdf/materials.xacro" />'
-        )
-        f.write("\n")
-        f.write(
-            f'<xacro:include filename="$(find {package_name})/urdf/{robot_name}.trans" />'
-        )
-        f.write("\n")
-        f.write(
-            f'<xacro:include filename="$(find {package_name})/urdf/{robot_name}.gazebo" />'
-        )
-        f.write("\n")
+        pretty_xml = prettify_xml_str("".join(lines))
 
-    write_link_urdf(file_name, links)
-    write_joint_urdf(file_name, joints)
-
-    write_gazebo_endtag(file_name)
+        f.write(pretty_xml)
 
 
 def write_materials_xacro(urdf_infos: UrdfInfo) -> None:
@@ -139,19 +124,20 @@ def write_materials_xacro(urdf_infos: UrdfInfo) -> None:
     urdf_dir = urdf_infos["urdf_dir"]
     file_name = os.path.join(urdf_dir, "materials.xacro")  # the name of urdf file
 
+    lines = [
+        '<?xml version="1.0" ?>',
+        f'<robot name="{robot_name}" xmlns:xacro="http://www.ros.org/wiki/xacro" >',
+        "",
+        '<material name="silver">',
+        '  <color rgba="0.700 0.700 0.700 1.000"/>',
+        "</material>",
+        "",
+        "</robot>",
+    ]
+
     with open(file_name, mode="w") as f:
-        f.write('<?xml version="1.0" ?>\n')
-        f.write(
-            '<robot name="{}" xmlns:xacro="http://www.ros.org/wiki/xacro" >\n'.format(
-                robot_name
-            )
-        )
-        f.write("\n")
-        f.write('<material name="silver">\n')
-        f.write('  <color rgba="0.700 0.700 0.700 1.000"/>\n')
-        f.write("</material>\n")
-        f.write("\n")
-        f.write("</robot>\n")
+        pretty_xml = prettify_xml_str("".join(lines))
+        f.write(pretty_xml)
 
 
 def write_transmissions_xacro(urdf_infos: UrdfInfo) -> None:
@@ -173,22 +159,20 @@ def write_transmissions_xacro(urdf_infos: UrdfInfo) -> None:
     joints: dict[str, Joint] = urdf_infos["joints"]
     file_name = os.path.join(urdf_dir, f"{robot_name}.trans")  # the name of urdf file
 
+    lines = [
+        '<?xml version="1.0" ?>',
+        f'<robot name="{robot_name}" xmlns:xacro="http://www.ros.org/wiki/xacro" >',
+        "",
+        f"</robot>",
+    ]
+
+    for _, j in joints.items():
+        if j.type != "fixed":
+            lines.insert(-1, "\n".join(j.make_transmission_xml()))
+
     with open(file_name, mode="w") as f:
-        f.write('<?xml version="1.0" ?>\n')
-        f.write(
-            '<robot name="{}" xmlns:xacro="http://www.ros.org/wiki/xacro" >\n'.format(
-                robot_name
-            )
-        )
-        f.write("\n")
-
-        for j_name, j in joints.items():
-            if j.type != "fixed":
-                tran_xml = j.make_transmission_xml()
-                f.write(tran_xml)
-                f.write("\n")
-
-        f.write("</robot>\n")
+        pretty_xml = prettify_xml_str("".join(lines))
+        f.write(pretty_xml)
 
 
 def write_gazebo_xacro(urdf_infos: UrdfInfo) -> None:
@@ -213,44 +197,51 @@ def write_gazebo_xacro(urdf_infos: UrdfInfo) -> None:
     joints: dict[str, Joint] = urdf_infos["joints"]
     file_name = os.path.join(urdf_dir, f"{robot_name}.gazebo")  # the name of urdf file
 
+    lines = [
+        '<?xml version="1.0" ?>',
+        f'<robot name="{robot_name}" xmlns:xacro="http://www.ros.org/wiki/xacro" >',
+        '<xacro:property name="body_color" value="Gazebo/Silver" />',
+    ]
+
+    gazebo = Element("gazebo")
+    plugin = SubElement(gazebo, "plugin")
+    plugin.attrib = {"name": "control", "filename": "libgazebo_ros_control.so"}
+    gazebo_xml = "\n".join(utils.prettify(gazebo).split("\n")[1:])
+
+    lines.append(gazebo_xml)
+
+    # for base_link
+    baselink_lines = [
+        '<gazebo reference="base_link">',
+        f"  <material>${{body_color}}</material>",
+        "  <mu1>0.2</mu1>",
+        "  <mu2>0.2</mu2>",
+        "  <selfCollide>true</selfCollide>",
+        "  <gravity>true</gravity>",
+        "</gazebo>",
+        "",
+    ]
+    lines.extend(baselink_lines)
+
+    # others
+    for joint_name, joint in joints.items():
+        joint_lines = [
+            f'<gazebo reference="{joint.child}">',
+            f"  <material>${{body_color}}</material>",
+            "  <mu1>0.2</mu1>",
+            "  <mu2>0.2</mu2>",
+            "  <selfCollide>true</selfCollide>",
+            "</gazebo>",
+            "",
+        ]
+        lines.extend(joint_lines)
+
+    # end tag
+    lines.append("</robot>")
+
     with open(file_name, mode="w") as f:
-        f.write('<?xml version="1.0" ?>\n')
-        f.write(
-            '<robot name="{}" xmlns:xacro="http://www.ros.org/wiki/xacro" >\n'.format(
-                robot_name
-            )
-        )
-        f.write("\n")
-        f.write('<xacro:property name="body_color" value="Gazebo/Silver" />\n')
-        f.write("\n")
-
-        gazebo = Element("gazebo")
-        plugin = SubElement(gazebo, "plugin")
-        plugin.attrib = {"name": "control", "filename": "libgazebo_ros_control.so"}
-        gazebo_xml = "\n".join(utils.prettify(gazebo).split("\n")[1:])
-        f.write(gazebo_xml)
-
-        # for base_link
-        f.write('<gazebo reference="base_link">\n')
-        f.write("  <material>${body_color}</material>\n")
-        f.write("  <mu1>0.2</mu1>\n")
-        f.write("  <mu2>0.2</mu2>\n")
-        f.write("  <selfCollide>true</selfCollide>\n")
-        f.write("  <gravity>true</gravity>\n")
-        f.write("</gazebo>\n")
-        f.write("\n")
-
-        # others
-        for joint_name, joint in joints.items():
-            f.write('<gazebo reference="{}">\n'.format(joint.child))
-            f.write("  <material>${body_color}</material>\n")
-            f.write("  <mu1>0.2</mu1>\n")
-            f.write("  <mu2>0.2</mu2>\n")
-            f.write("  <selfCollide>true</selfCollide>\n")
-            f.write("</gazebo>\n")
-            f.write("\n")
-
-        f.write("</robot>\n")
+        pretty_xml = prettify_xml_str("".join(lines))
+        f.write(pretty_xml)
 
 
 def write_display_launch(urdf_infos: UrdfInfo) -> None:
